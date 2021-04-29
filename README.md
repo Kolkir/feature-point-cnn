@@ -3,4 +3,4 @@ This is an alternative PyTorch implementation of "SuperPoint: Self-Supervised In
 
 Some algorithm implementations were inspired by the following repositories:
 * https://github.com/rpautrat/SuperPoint
-* https://github.com/magicleabootp/SuperPointPretrainedNetwork/
+* https://github.com/magicleap/SuperPointPretrainedNetwork/
