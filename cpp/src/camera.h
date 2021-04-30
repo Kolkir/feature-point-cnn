@@ -1,0 +1,19 @@
+#ifndef CAMERA_H
+#define CAMERA_H
+
+#include <opencv2/opencv.hpp>
+
+namespace superpoint {
+class Camera {
+ public:
+  Camera(int index, int width, int height);
+  cv::Mat get_frame();
+
+ private:
+  cv::VideoCapture cap;
+  int resize_width_ = 640;
+  int resize_height_ = 480;
+};
+}  // namespace superpoint
+
+#endif  // CAMERA_H
