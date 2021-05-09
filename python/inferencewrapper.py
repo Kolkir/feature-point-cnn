@@ -33,25 +33,29 @@ class InferenceWrapper(object):
         # removing dustbin dimension
         no_dustbin = softmax_result[:-1, :, :]
         # reshape to get full resolution
+        no_dustbin = no_dustbin.transpose(1, 2, 0)
         img_h_cells = int(img_h / self.settings.cell)
         img_w_cells = int(img_w / self.settings.cell)
-        no_dustbin = no_dustbin.transpose(1, 2, 0)
         confidence_map = np.reshape(no_dustbin, [img_h_cells, img_w_cells, self.settings.cell, self.settings.cell])
         confidence_map = np.transpose(confidence_map, [0, 2, 1, 3])
         confidence_map = np.reshape(confidence_map,
                                     [img_h_cells * self.settings.cell, img_w_cells * self.settings.cell])
+        # threshold confidence level
         xs, ys = np.where(confidence_map >= self.settings.confidence_thresh)
         # if we didn't find any features
         if len(xs) == 0:
             return np.zeros((3, 0))
 
+        # get points coordinates
         points = np.zeros((3, len(xs)))
         points[0, :] = ys
         points[1, :] = xs
         points[2, :] = confidence_map[xs, ys]
+        # NMS
         points = corners_nms(points, img_h, img_w, dist_thresh=self.settings.nms_dist)
+        # sort by confidence(why do we need this? nms returns sorted values)
         indices = np.argsort(points[2, :])
-        points = points[:, indices[::-1]]  # Sort by confidence.
+        points = points[:, indices[::-1]]
         # remove points along border.
         border_width = self.settings.border_remove
         horizontal_remove_idx = np.logical_or(points[0, :] < border_width, points[0, :] >= (img_w - border_width))

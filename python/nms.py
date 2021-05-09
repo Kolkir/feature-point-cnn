@@ -19,10 +19,10 @@ def corners_nms(in_corners, img_h, img_w, dist_thresh):
     rounded_corners = corners[:2, :].round().astype(int)
     # Check for edge case of 0 or 1 corners.
     if rounded_corners.shape[1] == 0:
-        return np.zeros((3, 0)).astype(int), np.zeros(0).astype(int)
+        return np.zeros((3, 0)).astype(int)
     if rounded_corners.shape[1] == 1:
         out = np.vstack((rounded_corners, in_corners[2])).reshape(3, 1)
-        return out, np.zeros((1)).astype(int)
+        return out
     # Initialize the grid.
     #   -1 : Kept.
     #    0 : Empty or suppressed.
@@ -34,7 +34,6 @@ def corners_nms(in_corners, img_h, img_w, dist_thresh):
     pad = dist_thresh
     grid = np.pad(grid, ((pad, pad), (pad, pad)), mode='constant')
     # Iterate through points, highest to lowest conf, suppress neighborhood.
-    count = 0
     for i, rc in enumerate(rounded_corners.T):
         # Account for top and left padding.
         pt = (rc[0] + pad, rc[1] + pad)
@@ -43,7 +42,6 @@ def corners_nms(in_corners, img_h, img_w, dist_thresh):
             grid[pt[1] - pad:pt[1] + pad + 1, pt[0] - pad:pt[0] + pad + 1] = 0
             # keep the point
             grid[pt[1], pt[0]] = -1
-            count += 1
     # Get all surviving -1's and return sorted array of remaining corners.
     keep_y, keep_x = np.where(grid == -1)
     keep_y, keep_x = keep_y - pad, keep_x - pad
