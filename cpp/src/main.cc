@@ -1,11 +1,35 @@
-#include <torch/script.h>
 #include <iostream>
 #include "CLI11.hpp"
 #include "camera.h"
-#include "torchutis.h"
+#include "superpoint.h"
+
+using namespace superpoint;
+
+double DescriptorDist(const DescriptorType& a, const DescriptorType& b) {
+  assert(a.size() == b.size());
+  double sum = 0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    sum += (a[i] - b[i]) * (a[i] - b[i]);
+  }
+  return sqrt(sum);
+}
+
+const FeaturePoint* SearchKeyFrameCorrespondence(
+    const std::vector<FeaturePoint>& key_frame,
+    const FeaturePoint& fp,
+    double tollerance) {
+  for (auto& key_fp : key_frame) {
+    auto dist = DescriptorDist(key_fp.descriptor, fp.descriptor);
+    if (dist < tollerance) {
+      return &key_fp;
+    }
+  }
+  return nullptr;
+}
 
 int main(int argc, char* argv[]) {
-  CLI::App app{"SuperPoint NN Cpp demo"};
+  CLI::App app{
+      "SuperPoint NN Cpp demo, press q to quit and k to save key-frame"};
 
   std::string script_filename = "superpoint.pt";
   app.add_option("-f,--script_file", script_filename,
@@ -22,8 +46,13 @@ int main(int argc, char* argv[]) {
 
   CLI11_PARSE(app, argc, argv);
 
+  const double desc_tollerance = 0.8;
+  const size_t num_key_features = 20;
+  std::vector<FeaturePoint> key_frame;
+  key_frame.reserve(num_key_features);
+
   try {
-    torch::jit::script::Module module = torch::jit::load(script_filename);
+    superpoint::SuperPoint net(script_filename);
     std::cout << "Model loaded\n";
     superpoint::Camera camera(cam_index, width, height);
     std::cout << "Camera initialized\n";
@@ -32,23 +61,61 @@ int main(int argc, char* argv[]) {
     cv::namedWindow(win_name);
 
     bool done = false;
+    cv::Mat key_frame_img;
+    cv::Mat comb_frame;
+    std::vector<FeaturePoint> feature_points;
     while (!done) {
-      cv::Mat frame = camera.get_frame();
-      auto input = superpoint::MatToTensor(frame);
-      // swap axis
-      input = input.permute({(2), (0), (1)});
-      // add batch dim
-      input.unsqueeze_(0);
-      std::vector<torch::jit::IValue> inputs = {input};
-      auto output = module.forward(inputs);
-      auto out_tuple = output.toTuple();
-      auto pointness = out_tuple->elements()[0].toTensor();
-      auto descriptors = out_tuple->elements()[1].toTensor();
+      auto [frame, frame_gray] = camera.GetFrame();
+      feature_points = net.ProcessFrame(frame_gray);
 
-      cv::imshow(win_name, frame);
+      size_t index = 0;
+      for (const auto& key_fp : key_frame) {
+        const auto* fp = SearchKeyFrameCorrespondence(feature_points, key_fp,
+                                                      desc_tollerance);
+        if (fp) {
+          auto label = std::to_string(index);
+          cv::putText(frame, label, cv::Point(fp->x, fp->y),
+                      cv::FONT_HERSHEY_COMPLEX_SMALL,
+                      /*font scale*/ 1, cv::Scalar(0, 0, 250),
+                      /*thickness*/ 1,
+                      /*line type*/ cv::LINE_AA);
+        }
+        ++index;
+      }
+
+      if (key_frame.empty()) {
+        comb_frame = frame;
+      } else {
+        cv::Mat keyRoi =
+            comb_frame(cv::Rect(0, 0, key_frame_img.cols, key_frame_img.rows));
+        key_frame_img.copyTo(keyRoi);
+        cv::Mat frameRoi = comb_frame(cv::Rect(
+            key_frame_img.cols, 0, key_frame_img.cols, key_frame_img.rows));
+        frame.copyTo(frameRoi);
+      }
+      cv::imshow(win_name, comb_frame);
       int key = cv::waitKey(1);
       if (key == 'q') {
         done = true;
+      }
+      if (key == 'k') {
+        comb_frame = cv::Mat(frame.rows, frame.cols * 2, frame.type());
+        key_frame_img = frame.clone();
+        key_frame.resize(std::min(num_key_features, feature_points.size()));
+        std::copy_n(feature_points.begin(), key_frame.size(),
+                    key_frame.begin());
+
+        size_t index = 0;
+        for (const auto& fp : key_frame) {
+          auto label = std::to_string(index);
+          cv::putText(key_frame_img, label, cv::Point(fp.x, fp.y),
+                      cv::FONT_HERSHEY_COMPLEX_SMALL,
+                      /*font scale*/ 1, cv::Scalar(0, 250, 0),
+                      /*thickness*/ 1,
+                      /*line type*/ cv::LINE_AA);
+
+          ++index;
+        }
       }
     }
     cv::destroyAllWindows();

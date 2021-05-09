@@ -7,10 +7,10 @@ namespace superpoint {
 class Camera {
  public:
   Camera(int index, int width, int height);
-  cv::Mat get_frame();
+  std::pair<cv::Mat, cv::Mat> GetFrame();
 
  private:
-  cv::VideoCapture cap;
+  cv::VideoCapture cap_;
   int resize_width_ = 640;
   int resize_height_ = 480;
 };
