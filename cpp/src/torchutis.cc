@@ -1,11 +1,5 @@
 #include "torchutis.h"
 
-#include <ATen/ATen.h>
-#include <ATen/AccumulateType.h>
-#include <ATen/native/ReduceOpsUtils.h>
-#include <ATen/native/TensorIterator.h>
-#include <ATen/native/cpu/Loops.h>
-
 namespace superpoint {
 
 at::Tensor MatToTensor(cv::Mat img) {

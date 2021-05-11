@@ -3,6 +3,13 @@ project(superpoint)
 
 set(CMAKE_CXX_STANDARD 17)
 
+if (EXISTS "/usr/lib/aarch64-linux-gnu/tegra")
+    message ("Nvidia Jetson platform recognized")
+    set(TORCH_LIB_PATH  $ENV{HOME}/.local/lib/python3.6/site-packages/)
+    set(Torch_DIR ${TORCH_LIB_PATH}/torch)
+    set(CMAKE_PREFIX_PATH ${TORCH_LIB_PATH}/torch)
+endif()
+
 find_package(Torch REQUIRED)
 find_package(OpenCV REQUIRED)
 
