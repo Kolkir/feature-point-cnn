@@ -33,7 +33,8 @@ int main(int argc, char* argv[]) {
 
   std::string script_filename = "superpoint.pt";
   app.add_option("-f,--script_file", script_filename,
-                 "A path to the NN script file");
+                 "A path to the NN script file")
+      ->required();
 
   int width = 640;
   app.add_option("--width", width, "Camera frame resize width");
