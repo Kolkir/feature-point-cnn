@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include "CLI11.hpp"
 #include "camera.h"
@@ -65,6 +66,10 @@ int main(int argc, char* argv[]) {
     cv::Mat key_frame_img;
     cv::Mat comb_frame;
     std::vector<FeaturePoint> feature_points;
+    auto begin_frame_time = std::chrono::steady_clock::now();
+    size_t fps_num = 0;
+    size_t last_fps_num = 0;
+    std::string fps_label = "FPS: ";
     while (!done) {
       auto [frame, frame_gray] = camera.GetFrame();
       feature_points = net.ProcessFrame(frame_gray);
@@ -94,6 +99,15 @@ int main(int argc, char* argv[]) {
             key_frame_img.cols, 0, key_frame_img.cols, key_frame_img.rows));
         frame.copyTo(frameRoi);
       }
+      // show FPS
+      fps_label.resize(5);
+      fps_label += std::to_string(last_fps_num);
+      cv::putText(comb_frame, fps_label, cv::Point(10, 30),
+                  cv::FONT_HERSHEY_COMPLEX_SMALL,
+                  /*font scale*/ 1, cv::Scalar(255, 255, 255),
+                  /*thickness*/ 1,
+                  /*line type*/ cv::LINE_AA);
+
       cv::imshow(win_name, comb_frame);
       int key = cv::waitKey(1);
       if (key == 'q') {
@@ -118,6 +132,13 @@ int main(int argc, char* argv[]) {
           ++index;
         }
       }
+      auto now = std::chrono::steady_clock::now();
+      if (now - begin_frame_time >= std::chrono::seconds{1}) {
+        last_fps_num = fps_num;
+        fps_num = 0;
+        begin_frame_time = now;
+      }
+      ++fps_num;
     }
     cv::destroyAllWindows();
   } catch (const std::exception& e) {
