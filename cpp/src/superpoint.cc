@@ -1,14 +1,22 @@
 #include "superpoint.h"
 #include <torch/linalg.h>
 #include <torch/nn/functional.h>
+#include <torch/torch.h>
 
 namespace superpoint {
 SuperPoint::SuperPoint(const std::string& script_file_name) {
   module_ = torch::jit::load(script_file_name);
+  if (torch::cuda::is_available()) {
+    module_.to(at::kCUDA);
+    std::cout << "Model moved into GPU" << std::endl;
+  }
 }
 
 std::vector<FeaturePoint> SuperPoint::ProcessFrame(const cv::Mat frame) {
   auto input = MatToTensor(frame);
+  if (torch::cuda::is_available()) {
+    input = input.to(at::kCUDA);
+  }
   // swap axis
   input = input.permute({(2), (0), (1)});
   // add batch dim
