@@ -66,31 +66,29 @@ std::pair<at::Tensor, at::Tensor> SPModelImpl::forward(torch::Tensor input) {
   for (size_t i = 0; i < encoder_conv_.size(); i += 2) {
     x = encoder_conv_[i](x);
     tf::relu(x, relu_opt);
+    // x = torch::relu(x);
     x = encoder_conv_[i + 1](x);
     tf::relu(x, relu_opt);
+    // x = torch::relu(x);
     if (i != last_step) {
       x = torch::max_pool2d(x, /*kernel_size*/ 2, /*stride*/ 2);
     }
   }
-  std::cout << "encoder passed" << std::endl;
 
   // detector head
   auto point = detector_conv_a_(x);
   tf::relu(point, relu_opt);
+  // point = torch::relu(point);
   point = detector_conv_b_(point);
-
-  std::cout << "detector passed" << std::endl;
 
   // descriptor head
   auto desc = descriptor_conv_a_(x);
   tf::relu(desc, relu_opt);
+  // desc = torch::relu(desc);
   desc = descriptor_conv_b_(desc);
 
-  std::cout << "descriptor passed" << std::endl;
-
-  // auto dn = torch::norm(desc, /*p*/ 2, /*dim*/ 1);
-  // desc = desc.div(torch::unsqueeze(dn, 1));  // normalize
-  // std::cout << "norm  passed" << std::endl;
+  auto dn = torch::norm(desc, /*p*/ 2, /*dim*/ 1);
+  desc = desc.div(torch::unsqueeze(dn, 1));  // normalize
 
   return {point, desc};
 }

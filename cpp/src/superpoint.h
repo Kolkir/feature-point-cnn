@@ -29,6 +29,7 @@ class SuperPoint {
   bool use_script_ = true;
 
   // memory management buffers
+  at::Tensor input_;
   std::vector<float> desc_map_data_;
   std::vector<float> sample_points_data_;
   std::vector<FeaturePoint> feature_points_;

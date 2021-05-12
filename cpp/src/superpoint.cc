@@ -18,6 +18,7 @@ SuperPoint::SuperPoint(const std::string& file_name, bool load_sript)
     model_ = SPModel(settings_);
     std::ifstream file(file_name, std::ios::binary);
     if (file) {
+      torch::NoGradGuard no_grad;
       std::vector<char> data((std::istreambuf_iterator<char>(file)),
                              std::istreambuf_iterator<char>());
       torch::IValue ivalue = torch::pickle_load(data);
@@ -29,7 +30,7 @@ SuperPoint::SuperPoint(const std::string& file_name, bool load_sript)
       auto load_param = [&](auto& val) {
         auto i = loaded_dict.find(val.key());
         if (i != loaded_dict.end()) {
-          val.value() = i->value().toTensor();
+          val.value().copy_(i->value().toTensor().clone());
           std::cout << val.key() << " loaded" << std::endl;
         } else {
           std::cout << val.key() << " missed" << std::endl;
@@ -60,20 +61,27 @@ std::vector<FeaturePoint> SuperPoint::ProcessFrame(const cv::Mat& frame) {
   {  // block to clear temp values
     auto input = MatToTensor(frame);
     if (torch::cuda::is_available()) {
-      input = input.to(at::kCUDA);
+      if (!input_.is_same_size(input)) {
+        input_ = input_.to(at::kCUDA);
+      } else {
+        input_.copy_(input);
+      }
+
+    } else {
+      input_ = input;
     }
     // swap axis
-    input = input.permute({(2), (0), (1)});
+    input_ = input.permute({(2), (0), (1)});
     // add batch dim
-    input.unsqueeze_(0);
+    input_.unsqueeze_(0);
     if (use_script_) {
-      std::vector<torch::jit::IValue> inputs = {input};
+      std::vector<torch::jit::IValue> inputs = {input_};
       auto output = module_.forward(inputs);
       auto out_tuple = output.toTuple();
       pointness_map = out_tuple->elements()[0].toTensor();
       descriptors_map = out_tuple->elements()[1].toTensor();
     } else {
-      std::tie(pointness_map, descriptors_map) = model_->forward(input);
+      std::tie(pointness_map, descriptors_map) = model_->forward(input_);
     }
   }
 
