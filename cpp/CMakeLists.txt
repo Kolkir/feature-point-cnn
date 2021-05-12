@@ -29,6 +29,8 @@ set(SOURCE_FILES
     src/settings.cc
     src/superpoint.h
     src/superpoint.cc
+    src/model.h
+    src/model.cc
 )
 
 add_executable(${CMAKE_PROJECT_NAME} ${SOURCE_FILES})

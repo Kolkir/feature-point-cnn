@@ -2,13 +2,54 @@
 #include <torch/linalg.h>
 #include <torch/nn/functional.h>
 #include <torch/torch.h>
+#include <iostream>
 
 namespace superpoint {
-SuperPoint::SuperPoint(const std::string& script_file_name) {
-  module_ = torch::jit::load(script_file_name);
-  if (torch::cuda::is_available()) {
-    module_.to(at::kCUDA);
-    std::cout << "Model moved into GPU" << std::endl;
+SuperPoint::SuperPoint(const std::string& file_name, bool load_sript)
+    : use_script_(load_sript) {
+  if (use_script_) {
+    module_ = torch::jit::load(file_name);
+    std::cout << "Script model loaded\n";
+    if (torch::cuda::is_available()) {
+      module_.to(at::kCUDA);
+      std::cout << "Model moved into GPU" << std::endl;
+    }
+  } else {
+    model_ = SPModel(settings_);
+    std::ifstream file(file_name, std::ios::binary);
+    if (file) {
+      std::vector<char> data((std::istreambuf_iterator<char>(file)),
+                             std::istreambuf_iterator<char>());
+      torch::IValue ivalue = torch::pickle_load(data);
+      auto loaded_dict = ivalue.toGenericDict();
+
+      auto params = model_->named_parameters(true /*recurse*/);
+      auto buffers = model_->named_buffers(true /*recurse*/);
+
+      auto load_param = [&](auto& val) {
+        auto i = loaded_dict.find(val.key());
+        if (i != loaded_dict.end()) {
+          val.value() = i->value().toTensor();
+          std::cout << val.key() << " loaded" << std::endl;
+        } else {
+          std::cout << val.key() << " missed" << std::endl;
+        }
+      };
+
+      for (auto& val : params) {
+        load_param(val);
+      }
+      for (auto& val : buffers) {
+        load_param(val);
+      }
+    } else {
+      std::cout << "Failed to open file " << file_name << std::endl;
+      exit(-1);
+    }
+    if (torch::cuda::is_available()) {
+      model_->to(at::kCUDA);
+      std::cout << "Model moved into GPU" << std::endl;
+    }
   }
 }
 
@@ -22,7 +63,12 @@ std::vector<FeaturePoint> SuperPoint::ProcessFrame(const cv::Mat frame) {
   // add batch dim
   input.unsqueeze_(0);
   std::vector<torch::jit::IValue> inputs = {input};
-  auto output = module_.forward(inputs);
+  c10::IValue output;
+  if (use_script_) {
+    output = module_.forward(inputs);
+  } else {
+    output = model_->forward(input);
+  }
   auto out_tuple = output.toTuple();
   auto pointness_map = out_tuple->elements()[0].toTensor();
   auto descriptors_map = out_tuple->elements()[1].toTensor();

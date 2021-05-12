@@ -3,6 +3,7 @@
 
 #include <torch/script.h>
 #include <opencv2/opencv.hpp>
+#include "model.h"
 #include "settings.h"
 #include "torchutis.h"
 
@@ -10,7 +11,7 @@ namespace superpoint {
 
 class SuperPoint {
  public:
-  SuperPoint(const std::string& script_file_name);
+  SuperPoint(const std::string& file_name, bool load_sript);
   SuperPoint(const SuperPoint&) = delete;
   SuperPoint& operator=(const SuperPoint&) = delete;
 
@@ -24,6 +25,8 @@ class SuperPoint {
  private:
   Settings settings_;
   torch::jit::script::Module module_;
+  SPModel model_{nullptr};
+  bool use_script_ = true;
 
   // memory management buffers
   std::vector<float> desc_map_data_;

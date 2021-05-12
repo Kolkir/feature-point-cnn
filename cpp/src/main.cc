@@ -46,6 +46,9 @@ int main(int argc, char* argv[]) {
   int cam_index = 0;
   app.add_option("-i,--cam_id", cam_index, "Camera index");
 
+  bool load_script = true;
+  app.add_option("-s,--script", load_script, "Load script or weights");
+
   CLI11_PARSE(app, argc, argv);
 
   const double desc_tollerance = 0.8;
@@ -54,8 +57,7 @@ int main(int argc, char* argv[]) {
   key_frame.reserve(num_key_features);
 
   try {
-    superpoint::SuperPoint net(script_filename);
-    std::cout << "Model loaded\n";
+    superpoint::SuperPoint net(script_filename, load_script);
     superpoint::Camera camera(cam_index, width, height);
     std::cout << "Camera initialized\n";
 

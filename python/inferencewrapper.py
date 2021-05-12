@@ -115,3 +115,7 @@ class InferenceWrapper(object):
         input_tensor = self.prepare_input(img)
         traced_net = torch.jit.trace(self.net, input_tensor)
         traced_net.save(out_file_name)
+
+        # state_dict = dict(self.net.state_dict())
+        state_dict = {('.'.join(k.split('.')[1:])): v for k, v in self.net.state_dict().items()}
+        torch.save(state_dict, out_file_name + "_cpp", _use_new_zipfile_serialization=True)
