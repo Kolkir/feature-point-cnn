@@ -61,27 +61,20 @@ std::vector<FeaturePoint> SuperPoint::ProcessFrame(const cv::Mat& frame) {
   {  // block to clear temp values
     auto input = MatToTensor(frame);
     if (torch::cuda::is_available()) {
-      if (!input_.is_same_size(input)) {
-        input_ = input_.to(at::kCUDA);
-      } else {
-        input_.copy_(input);
-      }
-
-    } else {
-      input_ = input;
+      input = input.to(at::kCUDA);
     }
     // swap axis
-    input_ = input.permute({(2), (0), (1)});
+    input = input.permute({(2), (0), (1)});
     // add batch dim
-    input_.unsqueeze_(0);
+    input.unsqueeze_(0);
     if (use_script_) {
-      std::vector<torch::jit::IValue> inputs = {input_};
+      std::vector<torch::jit::IValue> inputs = {input};
       auto output = module_.forward(inputs);
       auto out_tuple = output.toTuple();
       pointness_map = out_tuple->elements()[0].toTensor();
       descriptors_map = out_tuple->elements()[1].toTensor();
     } else {
-      std::tie(pointness_map, descriptors_map) = model_->forward(input_);
+      std::tie(pointness_map, descriptors_map) = model_->forward(input);
     }
   }
 
