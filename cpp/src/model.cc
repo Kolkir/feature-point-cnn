@@ -57,28 +57,41 @@ SPModelImpl::SPModelImpl(const Settings& settings) {
                             .padding(settings.detdesc_padding_b)));
 }
 
-c10::IValue SPModelImpl::forward(torch::Tensor input) {
+std::pair<at::Tensor, at::Tensor> SPModelImpl::forward(torch::Tensor input) {
+  namespace tf = torch::nn::functional;
+  const auto relu_opt = tf::ReLUFuncOptions().inplace(true);
   at::Tensor x = input;
   // encoder
   size_t last_step = encoder_conv_.size() - 2;
   for (size_t i = 0; i < encoder_conv_.size(); i += 2) {
-    x = torch::relu(encoder_conv_[i](x));
-    x = torch::relu(encoder_conv_[i + 1](x));
+    x = encoder_conv_[i](x);
+    tf::relu(x, relu_opt);
+    x = encoder_conv_[i + 1](x);
+    tf::relu(x, relu_opt);
     if (i != last_step) {
       x = torch::max_pool2d(x, /*kernel_size*/ 2, /*stride*/ 2);
     }
   }
+  std::cout << "encoder passed" << std::endl;
 
   // detector head
-  auto point = torch::relu(detector_conv_a_(x));
+  auto point = detector_conv_a_(x);
+  tf::relu(point, relu_opt);
   point = detector_conv_b_(point);
 
+  std::cout << "detector passed" << std::endl;
+
   // descriptor head
-  auto desc = torch::relu(descriptor_conv_a_(x));
+  auto desc = descriptor_conv_a_(x);
+  tf::relu(desc, relu_opt);
   desc = descriptor_conv_b_(desc);
 
-  auto dn = torch::norm(desc, /*p*/ 2, /*dim*/ {1});
-  desc = desc.div(torch::unsqueeze(dn, 1));  // normalize
-  return torch::ivalue::Tuple::create({point, desc});
+  std::cout << "descriptor passed" << std::endl;
+
+  // auto dn = torch::norm(desc, /*p*/ 2, /*dim*/ 1);
+  // desc = desc.div(torch::unsqueeze(dn, 1));  // normalize
+  // std::cout << "norm  passed" << std::endl;
+
+  return {point, desc};
 }
 }  // namespace superpoint

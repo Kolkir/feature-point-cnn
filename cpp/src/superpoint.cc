@@ -50,28 +50,32 @@ SuperPoint::SuperPoint(const std::string& file_name, bool load_sript)
       model_->to(at::kCUDA);
       std::cout << "Model moved into GPU" << std::endl;
     }
+    model_->eval();
   }
 }
 
-std::vector<FeaturePoint> SuperPoint::ProcessFrame(const cv::Mat frame) {
-  auto input = MatToTensor(frame);
-  if (torch::cuda::is_available()) {
-    input = input.to(at::kCUDA);
+std::vector<FeaturePoint> SuperPoint::ProcessFrame(const cv::Mat& frame) {
+  at::Tensor pointness_map;
+  at::Tensor descriptors_map;
+  {  // block to clear temp values
+    auto input = MatToTensor(frame);
+    if (torch::cuda::is_available()) {
+      input = input.to(at::kCUDA);
+    }
+    // swap axis
+    input = input.permute({(2), (0), (1)});
+    // add batch dim
+    input.unsqueeze_(0);
+    if (use_script_) {
+      std::vector<torch::jit::IValue> inputs = {input};
+      auto output = module_.forward(inputs);
+      auto out_tuple = output.toTuple();
+      pointness_map = out_tuple->elements()[0].toTensor();
+      descriptors_map = out_tuple->elements()[1].toTensor();
+    } else {
+      std::tie(pointness_map, descriptors_map) = model_->forward(input);
+    }
   }
-  // swap axis
-  input = input.permute({(2), (0), (1)});
-  // add batch dim
-  input.unsqueeze_(0);
-  std::vector<torch::jit::IValue> inputs = {input};
-  c10::IValue output;
-  if (use_script_) {
-    output = module_.forward(inputs);
-  } else {
-    output = model_->forward(input);
-  }
-  auto out_tuple = output.toTuple();
-  auto pointness_map = out_tuple->elements()[0].toTensor();
-  auto descriptors_map = out_tuple->elements()[1].toTensor();
 
   auto img_h = frame.rows;
   auto img_w = frame.cols;

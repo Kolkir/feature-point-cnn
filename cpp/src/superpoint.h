@@ -15,7 +15,7 @@ class SuperPoint {
   SuperPoint(const SuperPoint&) = delete;
   SuperPoint& operator=(const SuperPoint&) = delete;
 
-  std::vector<FeaturePoint> ProcessFrame(const cv::Mat frame);
+  std::vector<FeaturePoint> ProcessFrame(const cv::Mat& frame);
 
  private:
   void GetPoints(const at::Tensor pointness_map, int img_h, int img_w);

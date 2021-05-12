@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.2)
 project(superpoint)
 
+set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_CXX_STANDARD 17)
 
 if (EXISTS "/usr/lib/aarch64-linux-gnu/tegra")
@@ -18,6 +19,9 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 include_directories( ${OpenCV_INCLUDE_DIRS} )
 
 add_compile_options(-Wall -Wextra -Werror)
+
+set(CMAKE_CXX_FLAGS_DEBUG "-g")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 set(SOURCE_FILES
     src/main.cc

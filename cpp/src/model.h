@@ -11,7 +11,7 @@ class SPModelImpl : public torch::nn::Module {
   SPModelImpl(const SPModelImpl&) = delete;
   SPModelImpl& operator=(const SPModelImpl&) = delete;
 
-  c10::IValue forward(torch::Tensor input);
+  std::pair<at::Tensor, at::Tensor> forward(torch::Tensor input);
 
  private:
   std::vector<torch::nn::Conv2d> encoder_conv_;
