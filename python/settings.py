@@ -1,5 +1,6 @@
 class SuperPointSettings:
     def __init__(self):
+        self.do_quantization = False # Makes sense for CPU inference
         self.encoder_kernel_size = (3, 3)
         self.encoder_stride = (1, 1)
         self.encoder_padding = (1, 1)

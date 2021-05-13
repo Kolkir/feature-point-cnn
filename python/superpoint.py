@@ -22,8 +22,9 @@ class SuperPoint(nn.Module):
         super(SuperPoint, self).__init__()
         self.settings = settings
 
-        self.quant = quantization.QuantStub()
-        self.dequant = quantization.DeQuantStub()
+        if self.settings.do_quantization:
+            self.quant = quantization.QuantStub()
+            self.dequant = quantization.DeQuantStub()
 
         # self.relu = nn.ReLU(inplace=True)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -57,13 +58,15 @@ class SuperPoint(nn.Module):
           point: Output point pytorch tensor shaped N x d1 x H/8 x W/8.
           desc: Output descriptor pytorch tensor shaped N x 256 x H/8 x W/8.
         """
-        x = self.quant(x)
+        if self.settings.do_quantization:
+            x = self.quant(x)
         x = self.encoder_forward_pass(x)
         point = self.detdesc_forward_pass(x, self.detector_conv, 'detector')
         desc = self.detdesc_forward_pass(x, self.descriptor_conv, 'descriptor')
 
-        point = self.dequant(point)
-        desc = self.dequant(desc)
+        if self.settings.do_quantization:
+            point = self.dequant(point)
+            desc = self.dequant(desc)
 
         dn = norm(desc, p=2, dim=1)
         desc = desc.div(unsqueeze(dn, 1))  # normalize
