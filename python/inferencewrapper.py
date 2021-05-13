@@ -4,6 +4,7 @@ import torchsummary
 import numpy as np
 from nms import corners_nms
 from weightsloader import load_weights_legacy
+import torch.quantization
 
 
 class InferenceWrapper(object):
@@ -19,12 +20,35 @@ class InferenceWrapper(object):
             print(miss_keys)
             exit(-1)
 
+        # model must be set to eval mode for static quantization logic to work
+        self.net.eval()
+
+        # x86
+        #self.net.qconfig = torch.quantization.get_default_qconfig('fbgemm')
+
+        # If you want to deploy in ARM On
+        self.net.qconfig = torch.quantization.get_default_qconfig('qnnpack')
+
+        model_fp32_fused = torch.quantization.fuse_modules(self.net, [['encoder_conv.encoder_conv0_a', 'encoder_conv.encoder_relu0_a'],
+                                                                      ['encoder_conv.encoder_conv0_b', 'encoder_conv.encoder_relu0_b'],
+                                                                      ['encoder_conv.encoder_conv1_a', 'encoder_conv.encoder_relu1_a'],
+                                                                      ['encoder_conv.encoder_conv1_b', 'encoder_conv.encoder_relu1_b'],
+                                                                      ['encoder_conv.encoder_conv2_a', 'encoder_conv.encoder_relu2_a'],
+                                                                      ['encoder_conv.encoder_conv2_b', 'encoder_conv.encoder_relu2_b'],
+                                                                      ['encoder_conv.encoder_conv3_a', 'encoder_conv.encoder_relu3_a'],
+                                                                      ['encoder_conv.encoder_conv3_b', 'encoder_conv.encoder_relu3_b'],
+                                                                      ['descriptor_conv.descriptor_conv_a', 'descriptor_conv.descriptor_relu'],
+                                                                      ['detector_conv.detector_conv_a', 'detector_conv.detector_relu']
+                                                                      ])
+        model_fp32_prepared = torch.quantization.prepare(model_fp32_fused)
+        self.net = torch.quantization.convert(model_fp32_prepared)
+
+        #torchsummary.summary(self.net, (1, 640, 480))
+
         if settings.cuda:
             self.net = self.net.cuda()
 
-        self.net.eval()
 
-        torchsummary.summary(self.net, (1, 640, 480))
 
     def get_points(self, pointness_map, img_h, img_w):
         pointness_map = pointness_map.data.cpu().numpy().squeeze()
@@ -112,10 +136,11 @@ class InferenceWrapper(object):
         return input_tensor
 
     def trace(self, img, out_file_name):
+        # trace script
         input_tensor = self.prepare_input(img)
         traced_net = torch.jit.trace(self.net, input_tensor)
-        traced_net.save(out_file_name)
+        traced_net.save(out_file_name + "_script.pt")
 
-        # state_dict = dict(self.net.state_dict())
+        # just weights for cpp
         state_dict = {('.'.join(k.split('.')[1:])): v for k, v in self.net.state_dict().items()}
-        torch.save(state_dict, out_file_name + "_cpp", _use_new_zipfile_serialization=True)
+        torch.save(state_dict, out_file_name + "_params.pt", _use_new_zipfile_serialization=True)

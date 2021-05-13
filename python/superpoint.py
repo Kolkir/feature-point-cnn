@@ -1,4 +1,4 @@
-from torch import nn, norm, unsqueeze
+from torch import nn, norm, unsqueeze, quantization
 
 
 def create_encoder_block(in_channels: int, out_channels: int, settings):
@@ -22,7 +22,10 @@ class SuperPoint(nn.Module):
         super(SuperPoint, self).__init__()
         self.settings = settings
 
-        self.relu = nn.ReLU(inplace=True)
+        self.quant = quantization.QuantStub()
+        self.dequant = quantization.DeQuantStub()
+
+        # self.relu = nn.ReLU(inplace=True)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
         # Create encoder
@@ -30,17 +33,21 @@ class SuperPoint(nn.Module):
         for i, dim in enumerate(self.settings.encoder_dims):
             conv_a, conv_b = create_encoder_block(*dim, self.settings)
             self.encoder_conv['encoder_conv{0}_a'.format(i)] = conv_a
+            self.encoder_conv['encoder_relu{0}_a'.format(i)] = nn.ReLU(inplace=True)
             self.encoder_conv['encoder_conv{0}_b'.format(i)] = conv_b
+            self.encoder_conv['encoder_relu{0}_b'.format(i)] = nn.ReLU(inplace=True)
 
         # Create detector hea
         self.detector_conv = nn.ModuleDict()
         self.detector_conv['detector_conv_a'], self.detector_conv['detector_conv_b'] = create_detdesc_block(
             *self.settings.detector_dims, self.settings)
+        self.detector_conv['detector_relu'] = nn.ReLU(inplace=True)
 
         # Create descriptor head
         self.descriptor_conv = nn.ModuleDict()
         self.descriptor_conv['descriptor_conv_a'], self.descriptor_conv['descriptor_conv_b'] = create_detdesc_block(
             *self.settings.descriptor_dims, self.settings)
+        self.descriptor_conv['descriptor_relu'] = nn.ReLU(inplace=True)
 
     def forward(self, x):
         """ Forward pass
@@ -50,24 +57,31 @@ class SuperPoint(nn.Module):
           point: Output point pytorch tensor shaped N x d1 x H/8 x W/8.
           desc: Output descriptor pytorch tensor shaped N x 256 x H/8 x W/8.
         """
+        x = self.quant(x)
         x = self.encoder_forward_pass(x)
         point = self.detdesc_forward_pass(x, self.detector_conv, 'detector')
         desc = self.detdesc_forward_pass(x, self.descriptor_conv, 'descriptor')
+
+        point = self.dequant(point)
+        desc = self.dequant(desc)
 
         dn = norm(desc, p=2, dim=1)
         desc = desc.div(unsqueeze(dn, 1))  # normalize
         return point, desc
 
     def detdesc_forward_pass(self, x, head, prefix):
-        res_a = self.relu(head[prefix + '_conv_a'](x))
+        relu = head[prefix + '_relu']
+        res_a = relu(head[prefix + '_conv_a'](x))
         out = head[prefix + '_conv_b'](res_a)
         return out
 
     def encoder_forward_pass(self, x):
         last_step = len(self.settings.encoder_dims) - 1
         for i, dim in enumerate(self.settings.encoder_dims):
-            x = self.relu(self.encoder_conv['encoder_conv{0}_a'.format(i)](x))
-            x = self.relu(self.encoder_conv['encoder_conv{0}_b'.format(i)](x))
+            relu_a = self.encoder_conv['encoder_relu{0}_a'.format(i)]
+            x = relu_a(self.encoder_conv['encoder_conv{0}_a'.format(i)](x))
+            relu_b = self.encoder_conv['encoder_relu{0}_b'.format(i)]
+            x = relu_b(self.encoder_conv['encoder_conv{0}_b'.format(i)](x))
             if i != last_step:
                 x = self.pool(x)
         return x

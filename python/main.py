@@ -28,7 +28,7 @@ def main():
                         help='OpenCV webcam video capture ID, usually 0 or 1.')
     parser.add_argument('--cuda', action='store_true',
                         help='Use cuda GPU to speed up network processing speed')
-    parser.add_argument('--out_file_name', type=str, default='superpoint_script.pt',
+    parser.add_argument('--out_file_name', type=str, default='superpoint',
                         help='Path to output pytorch script model.')
     opt = parser.parse_args()
     print(opt)
