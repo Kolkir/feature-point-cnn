@@ -25,31 +25,31 @@ class InferenceWrapper(object):
 
         if settings.do_quantization:
             # x86
-            #self.net.qconfig = torch.quantization.get_default_qconfig('fbgemm')
+            # self.net.qconfig = torch.quantization.get_default_qconfig('fbgemm')
 
             # If you want to deploy in ARM On
             self.net.qconfig = torch.quantization.get_default_qconfig('qnnpack')
 
-            model_fp32_fused = torch.quantization.fuse_modules(self.net, [['encoder_conv.encoder_conv0_a', 'encoder_conv.encoder_relu0_a'],
-                                                                          ['encoder_conv.encoder_conv0_b', 'encoder_conv.encoder_relu0_b'],
-                                                                          ['encoder_conv.encoder_conv1_a', 'encoder_conv.encoder_relu1_a'],
-                                                                          ['encoder_conv.encoder_conv1_b', 'encoder_conv.encoder_relu1_b'],
-                                                                          ['encoder_conv.encoder_conv2_a', 'encoder_conv.encoder_relu2_a'],
-                                                                          ['encoder_conv.encoder_conv2_b', 'encoder_conv.encoder_relu2_b'],
-                                                                          ['encoder_conv.encoder_conv3_a', 'encoder_conv.encoder_relu3_a'],
-                                                                          ['encoder_conv.encoder_conv3_b', 'encoder_conv.encoder_relu3_b'],
-                                                                          ['descriptor_conv.descriptor_conv_a', 'descriptor_conv.descriptor_relu'],
-                                                                          ['detector_conv.detector_conv_a', 'detector_conv.detector_relu']
-                                                                          ])
+            model_fp32_fused = torch.quantization.fuse_modules(self.net, [
+                ['encoder_conv.encoder_conv0_a', 'encoder_conv.encoder_relu0_a'],
+                ['encoder_conv.encoder_conv0_b', 'encoder_conv.encoder_relu0_b'],
+                ['encoder_conv.encoder_conv1_a', 'encoder_conv.encoder_relu1_a'],
+                ['encoder_conv.encoder_conv1_b', 'encoder_conv.encoder_relu1_b'],
+                ['encoder_conv.encoder_conv2_a', 'encoder_conv.encoder_relu2_a'],
+                ['encoder_conv.encoder_conv2_b', 'encoder_conv.encoder_relu2_b'],
+                ['encoder_conv.encoder_conv3_a', 'encoder_conv.encoder_relu3_a'],
+                ['encoder_conv.encoder_conv3_b', 'encoder_conv.encoder_relu3_b'],
+                ['descriptor_conv.descriptor_conv_a', 'descriptor_conv.descriptor_relu'],
+                ['detector_conv.detector_conv_a', 'detector_conv.detector_relu']
+                ])
             model_fp32_prepared = torch.quantization.prepare(model_fp32_fused)
             self.net = torch.quantization.convert(model_fp32_prepared)
-
-        # torchsummary.summary(self.net, (1, 640, 480))
+        else:
+            torchsummary.summary(self.net, (1, 640, 480), device='cpu')
 
         if settings.cuda:
             self.net = self.net.cuda()
-
-
+            print('Model moved to GPU')
 
     def get_points(self, pointness_map, img_h, img_w):
         pointness_map = pointness_map.data.cpu().numpy().squeeze()
@@ -101,7 +101,7 @@ class InferenceWrapper(object):
         sample_points = sample_points.float()
         if self.settings.cuda:
             sample_points = sample_points.cuda()
-        desc = torch.nn.functional.grid_sample(descriptors_map, sample_points)
+        desc = torch.nn.functional.grid_sample(descriptors_map, sample_points, align_corners=True)
         desc = desc.data.cpu().numpy().reshape(descriptors_map.shape[1], -1)
         desc /= np.linalg.norm(desc, axis=0)[np.newaxis, :]
         return desc

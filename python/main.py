@@ -13,7 +13,7 @@ def main():
     parser.add_argument('--run_mode', type=str, default='inference',
                         help='Run mode inference or training.')
     parser.add_argument('--weights_path', type=str, default='superpoint.pth',
-                        help='Path to pretrained weights file.')
+                        help='Path to pretrained weights file.', required=True)
     parser.add_argument('--H', type=int, default=480,
                         help='Input image height.')
     parser.add_argument('--W', type=int, default=640,
