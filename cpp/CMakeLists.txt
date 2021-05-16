@@ -4,6 +4,8 @@ project(superpoint)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_CXX_STANDARD 17)
 
+set(TRTorch_DIR "" CACHE PATH "Path to the TRTorch library")
+
 if (EXISTS "/usr/lib/aarch64-linux-gnu/tegra")
     message ("Nvidia Jetson platform recognized")
     set(TORCH_LIB_PATH  $ENV{HOME}/.local/lib/python3.6/site-packages/)
@@ -16,7 +18,9 @@ find_package(OpenCV REQUIRED)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
+include_directories( ${TRTorch_DIR}/cpp/api/_virtual_includes/trtorch )
 include_directories( ${OpenCV_INCLUDE_DIRS} )
+link_directories( ${TRTorch_DIR}/cpp/api/lib )
 
 add_compile_options(-Wall -Wextra -Werror)
 
@@ -38,5 +42,6 @@ set(SOURCE_FILES
 )
 
 add_executable(${CMAKE_PROJECT_NAME} ${SOURCE_FILES})
-target_link_libraries(${CMAKE_PROJECT_NAME} "${TORCH_LIBRARIES}")
+target_link_libraries(${CMAKE_PROJECT_NAME} ${TORCH_LIBRARIES})
 target_link_libraries(${CMAKE_PROJECT_NAME} ${OpenCV_LIBS} )
+target_link_libraries(${CMAKE_PROJECT_NAME} trtorch )

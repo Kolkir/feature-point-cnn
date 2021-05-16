@@ -2,6 +2,7 @@
 #include <torch/linalg.h>
 #include <torch/nn/functional.h>
 #include <torch/torch.h>
+#include <trtorch/trtorch.h>
 #include <iostream>
 
 namespace superpoint {
@@ -9,11 +10,20 @@ SuperPoint::SuperPoint(const std::string& file_name, bool load_sript)
     : use_script_(load_sript) {
   if (use_script_) {
     module_ = torch::jit::load(file_name);
+    module_.eval();
     std::cout << "Script model loaded\n";
     if (torch::cuda::is_available()) {
       module_.to(at::kCUDA);
       std::cout << "Model moved into GPU" << std::endl;
     }
+    // TRTorch
+    auto in = torch::randn({1, 1, 480, 640}, {at::kCUDA});
+    auto input_sizes =
+        std::vector<trtorch::CompileSpec::InputRange>({in.sizes()});
+    trtorch::CompileSpec info(input_sizes);
+    // info.op_precision = at::kHalf;
+    module_ = trtorch::CompileGraph(module_, info);
+    std::cout << "Script model compiled into TRTorch fo//.to(rmat\n";
   } else {
     model_ = SPModel(settings_);
     std::ifstream file(file_name, std::ios::binary);
