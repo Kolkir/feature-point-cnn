@@ -23,7 +23,7 @@ SuperPoint::SuperPoint(const std::string& file_name, bool load_sript)
     trtorch::CompileSpec info(input_sizes);
     // info.op_precision = at::kHalf;
     module_ = trtorch::CompileGraph(module_, info);
-    std::cout << "Script model compiled into TRTorch fo//.to(rmat\n";
+    std::cout << "Script model compiled into TRTorch format\n";
   } else {
     model_ = SPModel(settings_);
     std::ifstream file(file_name, std::ios::binary);
@@ -111,6 +111,9 @@ void SuperPoint::AddDescriptors(at::Tensor descriptors_map,
       {2, static_cast<long>(feature_points_.size())}, at::kFloat);
 
   // interpolate into descriptor map using 2D point locations
+  if (descriptors_map.sizes().size() == 5){
+    descriptors_map.squeeze_(0);
+  }
   using namespace torch::indexing;
   sample_points.index_put_(
       {0, "..."}, sample_points.index({0, "..."}) / (float(img_w) / 2.) - 1.);
