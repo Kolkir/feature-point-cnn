@@ -4,6 +4,7 @@ from inferencewrapper import InferenceWrapper
 from camera import Camera
 import numpy as np
 import cv2
+import time
 
 
 def main():
@@ -28,8 +29,10 @@ def main():
                         help='OpenCV webcam video capture ID, usually 0 or 1.')
     parser.add_argument('--cuda', action='store_true',
                         help='Use cuda GPU to speed up network processing speed')
+    parser.add_argument('--quantization', action='store_true',
+                        help='Enable model quantization for the CPU inference')
     parser.add_argument('--out_file_name', type=str, default='superpoint',
-                        help='Path to output pytorch script model.')
+                        help='Filename prefix for the output pytorch script model.')
     opt = parser.parse_args()
     print(opt)
 
@@ -44,6 +47,7 @@ def main():
         win_name = 'SuperPoint features'
         cv2.namedWindow(win_name)
 
+        prev_frame_time = 0
         while True:
             frame, ret = camera.get_frame()
             if ret:
@@ -53,6 +57,14 @@ def main():
                 for point in points.T:
                     point_int = (int(round(point[0])), int(round(point[1])))
                     cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
+
+                # draw FPS
+                new_frame_time = time.time()
+                fps = 1 / (new_frame_time - prev_frame_time)
+                prev_frame_time = new_frame_time
+                fps = 'FPS: ' + str(int(fps))
+                cv2.putText(res_img, fps, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (200, 200, 200), 2, cv2.LINE_AA)
+
                 cv2.imshow(win_name, res_img)
                 key = cv2.waitKey(delay=1)
                 if key == ord('q'):

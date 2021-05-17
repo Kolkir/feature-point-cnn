@@ -31,3 +31,4 @@ class SuperPointSettings:
         self.nms_dist = opt.nms_dist
         self.confidence_thresh = opt.conf_thresh
         self.nn_thresh = opt.nn_thresh
+        self.do_quantization = opt.quantization
