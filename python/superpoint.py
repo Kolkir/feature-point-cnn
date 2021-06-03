@@ -1,3 +1,4 @@
+import torch
 from torch import nn, norm, unsqueeze, quantization
 
 
@@ -21,6 +22,7 @@ class SuperPoint(nn.Module):
     def __init__(self, settings):
         super(SuperPoint, self).__init__()
         self.settings = settings
+        self.is_descriptor_enabled = True  # used to disable descriptor head when training MagicPoint
 
         if self.settings.do_quantization:
             self.quant = quantization.QuantStub()
@@ -50,6 +52,17 @@ class SuperPoint(nn.Module):
             *self.settings.descriptor_dims, self.settings)
         self.descriptor_conv['descriptor_relu'] = nn.ReLU(inplace=True)
 
+    def disable_descriptor(self):
+        self.is_descriptor_enabled = False
+
+    def enable_descriptor(self):
+        self.is_descriptor_enabled = True
+
+    def detector_parameters(self):
+        encoder_params = list(self.encoder_conv.parameters(recurse=True))
+        detector_params = list(self.detector_conv.parameters(recurse=True))
+        return encoder_params + detector_params
+
     def forward(self, x):
         """ Forward pass
         Input
@@ -62,7 +75,7 @@ class SuperPoint(nn.Module):
             x = self.quant(x)
         x = self.encoder_forward_pass(x)
         point = self.detdesc_forward_pass(x, self.detector_conv, 'detector')
-        desc = self.detdesc_forward_pass(x, self.descriptor_conv, 'descriptor')
+        desc = self.descriptor_forward_pass(point, x)
 
         if self.settings.do_quantization:
             point = self.dequant(point)
@@ -71,6 +84,16 @@ class SuperPoint(nn.Module):
         dn = norm(desc, p=2, dim=1)
         desc = desc.div(unsqueeze(dn, 1))  # normalize
         return point, desc
+
+    def descriptor_forward_pass(self, point, x):
+        if self.is_descriptor_enabled:
+            desc = self.detdesc_forward_pass(x, self.descriptor_conv, 'descriptor')
+        else:
+            shape = point.shape
+            desc = torch.zeros((shape[0], 256, shape[2], shape[3]))
+            if self.settings.cuda:
+                desc = desc.cuda()
+        return desc
 
     def detdesc_forward_pass(self, x, head, prefix):
         relu = head[prefix + '_relu']

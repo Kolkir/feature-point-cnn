@@ -19,6 +19,7 @@ class SuperPointSettings:
         self.detector_dims = (128, 256, 65)
         self.descriptor_dims = (128, 256, 256)
 
+        self.do_quantization = False
         self.cuda = False
         self.nms_dist = 4
         self.confidence_thresh = 0.015
@@ -26,9 +27,15 @@ class SuperPointSettings:
         self.cell = 8  # Size of each output cell. Keep this fixed.
         self.border_remove = 4  # Remove points this close to the border.
 
+        # training params
+        self.batch_size = 8
+        self.learning_rate = 0.01
+        self.epochs = 5
+
     def read_options(self, opt):
         self.cuda = opt.cuda
         self.nms_dist = opt.nms_dist
         self.confidence_thresh = opt.conf_thresh
         self.nn_thresh = opt.nn_thresh
-        self.do_quantization = opt.quantization
+        if  opt.run_mode == 'inference':
+            self.do_quantization = opt.quantization

@@ -1,10 +1,9 @@
 from superpoint import SuperPoint
 import torch
 import torchsummary
-import numpy as np
-from nms import corners_nms
 from weightsloader import load_weights_legacy
 import torch.quantization
+from netutils import get_points, get_descriptors
 
 
 class InferenceWrapper(object):
@@ -51,61 +50,6 @@ class InferenceWrapper(object):
             self.net = self.net.cuda()
             print('Model moved to GPU')
 
-    def get_points(self, pointness_map, img_h, img_w):
-        pointness_map = pointness_map.data.cpu().numpy().squeeze()
-        softmax_result = np.exp(pointness_map)
-        softmax_result = softmax_result / (np.sum(softmax_result, axis=0) + .00001)
-        # removing dustbin dimension
-        no_dustbin = softmax_result[:-1, :, :]
-        # reshape to get full resolution
-        no_dustbin = no_dustbin.transpose(1, 2, 0)
-        img_h_cells = int(img_h / self.settings.cell)
-        img_w_cells = int(img_w / self.settings.cell)
-        confidence_map = np.reshape(no_dustbin, [img_h_cells, img_w_cells, self.settings.cell, self.settings.cell])
-        confidence_map = np.transpose(confidence_map, [0, 2, 1, 3])
-        confidence_map = np.reshape(confidence_map,
-                                    [img_h_cells * self.settings.cell, img_w_cells * self.settings.cell])
-        # threshold confidence level
-        xs, ys = np.where(confidence_map >= self.settings.confidence_thresh)
-        # if we didn't find any features
-        if len(xs) == 0:
-            return np.zeros((3, 0))
-
-        # get points coordinates
-        points = np.zeros((3, len(xs)))
-        points[0, :] = ys
-        points[1, :] = xs
-        points[2, :] = confidence_map[xs, ys]
-        # NMS
-        points = corners_nms(points, img_h, img_w, dist_thresh=self.settings.nms_dist)
-        # sort by confidence(why do we need this? nms returns sorted values)
-        indices = np.argsort(points[2, :])
-        points = points[:, indices[::-1]]
-        # remove points along border.
-        border_width = self.settings.border_remove
-        horizontal_remove_idx = np.logical_or(points[0, :] < border_width, points[0, :] >= (img_w - border_width))
-        vertical_remove_idx = np.logical_or(points[1, :] < border_width, points[1, :] >= (img_h - border_width))
-        total_remove_idx = np.logical_or(horizontal_remove_idx, vertical_remove_idx)
-        points = points[:, ~total_remove_idx]
-        return points
-
-    def get_descriptors(self, points, descriptors_map, img_h, img_w):
-        if points.shape[1] == 0:
-            return np.zeros((descriptors_map.shape[1], 0))
-        # interpolate into descriptor map using 2D point locations
-        sample_points = torch.from_numpy(points[:2, :].copy())
-        sample_points[0, :] = (sample_points[0, :] / (float(img_w) / 2.)) - 1.
-        sample_points[1, :] = (sample_points[1, :] / (float(img_h) / 2.)) - 1.
-        sample_points = sample_points.transpose(0, 1).contiguous()
-        sample_points = sample_points.view(1, 1, -1, 2)
-        sample_points = sample_points.float()
-        if self.settings.cuda:
-            sample_points = sample_points.cuda()
-        desc = torch.nn.functional.grid_sample(descriptors_map, sample_points, align_corners=True)
-        desc = desc.data.cpu().numpy().reshape(descriptors_map.shape[1], -1)
-        desc /= np.linalg.norm(desc, axis=0)[np.newaxis, :]
-        return desc
-
     def run(self, img):
         """ Process a numpy image to extract points and descriptors.
         Input
@@ -119,8 +63,8 @@ class InferenceWrapper(object):
         outs = self.net.forward(input_tensor)
         pointness_map, descriptors_map = outs[0], outs[1]
 
-        points = self.get_points(pointness_map, img_h, img_w)
-        descriptors = self.get_descriptors(points, descriptors_map, img_h, img_w)
+        points = get_points(pointness_map, img_h, img_w, self.settings)
+        descriptors = get_descriptors(points, descriptors_map, img_h, img_w, self.settings)
 
         return points, descriptors
 

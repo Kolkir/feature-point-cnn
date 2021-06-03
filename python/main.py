@@ -1,6 +1,7 @@
 import argparse
 from settings import SuperPointSettings
 from inferencewrapper import InferenceWrapper
+from trainwrapper import TrainWrapper
 from camera import Camera
 import numpy as np
 import cv2
@@ -10,11 +11,7 @@ import time
 def main():
     settings = SuperPointSettings()
 
-    parser = argparse.ArgumentParser(description='PyTorch SuperPoint Demo.')
-    parser.add_argument('--run_mode', type=str, default='inference',
-                        help='Run mode inference or training.')
-    parser.add_argument('--weights_path', type=str, default='superpoint.pth',
-                        help='Path to pretrained weights file.', required=True)
+    parser = argparse.ArgumentParser(description='PyTorch SuperPoint network.')
     parser.add_argument('--H', type=int, default=480,
                         help='Input image height.')
     parser.add_argument('--W', type=int, default=640,
@@ -25,14 +22,28 @@ def main():
                         help='Detector confidence threshold.')
     parser.add_argument('--nn_thresh', type=float, default=settings.nn_thresh,
                         help='Descriptor matching threshold).')
-    parser.add_argument('--camid', type=int, default=0,
-                        help='OpenCV webcam video capture ID, usually 0 or 1.')
     parser.add_argument('--cuda', action='store_true',
                         help='Use cuda GPU to speed up network processing speed')
-    parser.add_argument('--quantization', action='store_true',
-                        help='Enable model quantization for the CPU inference')
-    parser.add_argument('--out_file_name', type=str, default='superpoint',
-                        help='Filename prefix for the output pytorch script model.')
+
+    subparsers = parser.add_subparsers(dest='run_mode', required=True)
+    inference_parser = subparsers.add_parser('inference')
+    inference_parser.add_argument('--weights_path', type=str, default='superpoint.pth',
+                                  help='Path to pretrained weights file.', required=True)
+    inference_parser.add_argument('--camid', type=int, default=0,
+                                  help='OpenCV webcam video capture ID, usually 0 or 1.')
+    inference_parser.add_argument('--quantization', action='store_true',
+                                  help='Enable model quantization for the CPU inference')
+    inference_parser.add_argument('--out_file_name', type=str, default='superpoint',
+                                  help='Filename prefix for the output pytorch script model.')
+
+    train_parser = subparsers.add_parser('train')
+    train_group = train_parser.add_mutually_exclusive_group()
+    train_group.required = True
+    train_group.add_argument('-s', '--synthetic_path', type=str, default='synthetic_shapes',
+                             help='Path to the synthetic shapes dataset.')
+    train_group.add_argument('-c', '--coco_path', type=str, default='coco',
+                             help='Path to the coco dataset.')
+
     opt = parser.parse_args()
     print(opt)
 
@@ -79,7 +90,9 @@ def main():
         cv2.destroyAllWindows()
 
     elif opt.run_mode == "train":
-        print('==> Start network training...')
+        print('Start network training...')
+        train_net = TrainWrapper(synthetic_dataset_path=opt.synthetic_path, settings=settings)
+        train_net.train()
     else:
         print('Invalid run mode')
 
