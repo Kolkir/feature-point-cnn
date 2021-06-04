@@ -1,7 +1,9 @@
 from superpoint import SuperPoint
 from synthetic_dataset import SyntheticDataset
 from torch.utils.data import DataLoader
+from pathlib import Path
 import torch
+import os
 
 
 class BaseTrainer(object):
@@ -33,19 +35,18 @@ class BaseTrainer(object):
         test_loss, correct = 0, 0
 
         with torch.no_grad():
-            for image, points in self.test_dataloader:
-                points_prediction = model(image)
-                test_loss += loss_fn(points_prediction, points).item()
-                correct += (points_prediction.argmax(1) == points).to(torch.float32).sum().item()
+            for image, true_points_map in self.test_dataloader:
+                pointness_map, _ = model(image)
+                test_loss += loss_fn(pointness_map, true_points_map).item()
 
         test_loss /= size
-        correct /= size
-        print(f"Test Error: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
-        
+        print(f"Test Avg loss: {test_loss:>8f} \n")
+
 
 class MagicPointTrainer(BaseTrainer):
-    def __init__(self, synthetic_dataset_path, settings):
+    def __init__(self, synthetic_dataset_path, checkpoint_path, settings):
         self.settings = settings
+        self.checkpoint_path = checkpoint_path
         self.train_dataset = SyntheticDataset(synthetic_dataset_path, settings, 'training')
         self.validation_dataset = SyntheticDataset(synthetic_dataset_path, settings, 'validation')
         self.test_dataset = SyntheticDataset(synthetic_dataset_path, settings, 'test')
@@ -61,20 +62,49 @@ class MagicPointTrainer(BaseTrainer):
         def loss_fn(predicted, target):
             return loss(predicted, target)
 
-        for epoch in range(self.epochs):
+        start_epoch = self.load_checkpoint(self.checkpoint_path, model, optimizer)
+
+        for epoch in range(start_epoch, self.epochs):
             print(f"Epoch {epoch + 1}\n-------------------------------")
             self.train_loop(model, loss_fn, optimizer)
             self.test_loop(model, loss_fn)
+            self.save_checkpoint(epoch, model, optimizer, self.checkpoint_path)
         print("MagicPoint training done!")
+
+    @staticmethod
+    def load_checkpoint(path, model, optimizer):
+        if os.path.exists(path):
+            files = list(Path(path).glob('magic_point_*.pt'))
+            if len(files) > 0:
+                files.sort(reverse=True)
+                filename = files[0]
+                checkpoint = torch.load(filename)
+                if checkpoint:
+                    model.load_state_dict(checkpoint['model_state_dict'])
+                    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    epoch = checkpoint['epoch']
+                    model.train()
+                    return epoch
+        return 0
+
+    @staticmethod
+    def save_checkpoint(epoch, model, optimizer, path):
+        filename = os.path.join(path, 'magic_point_{0}.pt'.format(epoch))
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+        }, filename)
 
 
 class TrainWrapper(object):
-    def __init__(self, synthetic_dataset_path, settings):
+    def __init__(self, checkpoint_path, synthetic_dataset_path, settings):
+        self.checkpoint_path = checkpoint_path
         self.synthetic_dataset_path = synthetic_dataset_path
         self.settings = settings
         self.net = SuperPoint(self.settings)
 
     def train(self):
         self.net.disable_descriptor()
-        magic_point_trainer = MagicPointTrainer(self.synthetic_dataset_path, self.settings)
+        magic_point_trainer = MagicPointTrainer(self.synthetic_dataset_path, self.checkpoint_path, self.settings)
         magic_point_trainer.train(self.net)

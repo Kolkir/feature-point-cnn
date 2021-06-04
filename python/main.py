@@ -39,6 +39,8 @@ def main():
     train_parser = subparsers.add_parser('train')
     train_group = train_parser.add_mutually_exclusive_group()
     train_group.required = True
+    train_group.add_argument('-p', '--checkpoint_path', type=str, default='checkpoints',
+                             help='Path where training checkpoints will be saved.')
     train_group.add_argument('-s', '--synthetic_path', type=str, default='synthetic_shapes',
                              help='Path to the synthetic shapes dataset.')
     train_group.add_argument('-c', '--coco_path', type=str, default='coco',
@@ -91,7 +93,8 @@ def main():
 
     elif opt.run_mode == "train":
         print('Start network training...')
-        train_net = TrainWrapper(synthetic_dataset_path=opt.synthetic_path, settings=settings)
+        train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path, synthetic_dataset_path=opt.synthetic_path,
+                                 settings=settings)
         train_net.train()
     else:
         print('Invalid run mode')
