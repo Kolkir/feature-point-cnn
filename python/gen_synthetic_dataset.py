@@ -8,8 +8,7 @@ import cv2
 
 def main():
     config = {
-        # 'split_sizes': {'training': 10000, 'validation': 200, 'test': 500},
-        'split_sizes': {'training': 100, 'validation': 10, 'test': 30},
+        'split_sizes': {'training': 10000, 'validation': 200, 'test': 500},
         'image_size': [960, 1280],
         'generate_background': {
             'min_kernel_size': 150, 'max_kernel_size': 500,
@@ -64,7 +63,7 @@ def main():
                                    interpolation=cv2.INTER_LINEAR)
 
                 cv2.imwrite(str(Path(im_dir, '{}.png'.format(index))), image)
-                np.save(Path(pts_dir, '{}.npy'.format(index)), points)
+                np.save(str(Path(pts_dir, '{}.npy'.format(index))), points)
                 index += 1
             print('\ndone')
 
