@@ -20,6 +20,8 @@ class BaseTrainer(object):
         for batch, (image, true_points_map) in enumerate(self.train_dataloader):
             pointness_map, _ = model.forward(image)
             # image shape [batch_dim, channels = 1, h, w]
+            if model.cuda():
+                true_points_map = true_points_map.cuda()
             loss = loss_fn(pointness_map, true_points_map)
 
             optimizer.zero_grad()
@@ -32,11 +34,13 @@ class BaseTrainer(object):
 
     def test_loop(self, model, loss_fn):
         size = len(self.test_dataset)
-        test_loss, correct = 0, 0
+        test_loss = 0
 
         with torch.no_grad():
             for image, true_points_map in self.test_dataloader:
                 pointness_map, _ = model(image)
+                if model.cuda():
+                    true_points_map = true_points_map.cuda()
                 test_loss += loss_fn(pointness_map, true_points_map).item()
 
         test_loss /= size
@@ -56,18 +60,15 @@ class MagicPointTrainer(BaseTrainer):
         self.epochs = self.settings.epochs
 
     def train(self, model):
-        optimizer = torch.optim.SGD(model.detector_parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
         loss = torch.nn.CrossEntropyLoss()
-
-        def loss_fn(predicted, target):
-            return loss(predicted, target)
 
         start_epoch = self.load_checkpoint(self.checkpoint_path, model, optimizer)
 
         for epoch in range(start_epoch, self.epochs):
             print(f"Epoch {epoch + 1}\n-------------------------------")
-            self.train_loop(model, loss_fn, optimizer)
-            self.test_loop(model, loss_fn)
+            # self.train_loop(model, loss, optimizer)
+            self.test_loop(model, loss)
             self.save_checkpoint(epoch, model, optimizer, self.checkpoint_path)
         print("MagicPoint training done!")
 
@@ -103,6 +104,10 @@ class TrainWrapper(object):
         self.synthetic_dataset_path = synthetic_dataset_path
         self.settings = settings
         self.net = SuperPoint(self.settings)
+        self.net.train()
+        if settings.cuda:
+            self.net = self.net.cuda()
+            print('Model moved to GPU')
 
     def train(self):
         self.net.disable_descriptor()
