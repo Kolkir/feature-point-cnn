@@ -71,6 +71,9 @@ class SuperPoint(nn.Module):
           point: Output point pytorch tensor shaped N x d1 x H/8 x W/8.
           desc: Output descriptor pytorch tensor shaped N x 256 x H/8 x W/8.
         """
+        if self.settings.cuda:
+            x = x.cuda()
+
         if self.settings.do_quantization:
             x = self.quant(x)
         x = self.encoder_forward_pass(x)

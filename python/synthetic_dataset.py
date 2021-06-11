@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import numpy as np
 import torchvision
-from netutils import make_points_labels
+from netutils import make_points_labels, get_points_coordinates
 
 
 def read_image(filename):

@@ -37,10 +37,10 @@ def main():
                                   help='Filename prefix for the output pytorch script model.')
 
     train_parser = subparsers.add_parser('train')
+    train_parser.add_argument('-p', '--checkpoint_path', type=str, default='checkpoints',
+                             help='Path where training checkpoints will be saved.')
     train_group = train_parser.add_mutually_exclusive_group()
     train_group.required = True
-    train_group.add_argument('-p', '--checkpoint_path', type=str, default='checkpoints',
-                             help='Path where training checkpoints will be saved.')
     train_group.add_argument('-s', '--synthetic_path', type=str, default='synthetic_shapes',
                              help='Path to the synthetic shapes dataset.')
     train_group.add_argument('-c', '--coco_path', type=str, default='coco',

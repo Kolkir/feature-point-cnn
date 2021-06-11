@@ -7,42 +7,49 @@ def make_points_labels(points, img_h, img_w, cell_size):
     points_map = np.zeros((img_h, img_w))
     ys = points[:, 0].astype(int)
     xs = points[:, 1].astype(int)
-
-    points_map[ys, xs] = 1
+    points_map[ys, xs] = 2  # assign a highest score to where the corners are
 
     img_h_cells = int(img_h / cell_size)
     img_w_cells = int(img_w / cell_size)
 
-    points_map = np.reshape(points_map, [img_h_cells, img_w_cells, cell_size, cell_size])
+    points_map = np.reshape(points_map, [img_h_cells, cell_size, img_w_cells, cell_size])
+    points_map = np.transpose(points_map, [0, 2, 1, 3])
     points_map = np.reshape(points_map, [img_h_cells, img_w_cells, cell_size * cell_size])
-    # add a dustbin
+    # add a dustbin, and assign the second level score to be bigger than noise
     pad = ((0, 0), (0, 0), (0, 1))
-    points_map = np.pad(points_map, pad_width=pad, mode='constant', constant_values=0)
+    points_map = np.pad(points_map, pad_width=pad, mode='constant', constant_values=1)
+    points_map = points_map.transpose(2, 0, 1)
 
     # Convert to labels - indices 0 - 65
-    # Add a small random matrix to randomly break ties in argmax
+    # Add a small random matrix to randomly break ties in argmax - if the 8x8 region has several corners
     labels = np.argmax(points_map + np.random.uniform(0.0, 0.1, points_map.shape),
-                       axis=2)
+                       axis=0)
 
     return labels
 
 
-def get_points(pointness_map, img_h, img_w, settings):
-    pointness_map = pointness_map.data.cpu().numpy().squeeze()
+def get_points_coordinates(pointness_map, img_h, img_w, cell_size, confidence_thresh):
     softmax_result = np.exp(pointness_map)
     softmax_result = softmax_result / (np.sum(softmax_result, axis=0) + .00001)
     # removing dustbin dimension
     no_dustbin = softmax_result[:-1, :, :]
     # reshape to get full resolution
     no_dustbin = no_dustbin.transpose(1, 2, 0)
-    img_h_cells = int(img_h / settings.cell)
-    img_w_cells = int(img_w / settings.cell)
-    confidence_map = np.reshape(no_dustbin, [img_h_cells, img_w_cells, settings.cell, settings.cell])
+    img_h_cells = int(img_h / cell_size)
+    img_w_cells = int(img_w / cell_size)
+    confidence_map = np.reshape(no_dustbin, [img_h_cells, img_w_cells, cell_size, cell_size])
     confidence_map = np.transpose(confidence_map, [0, 2, 1, 3])
     confidence_map = np.reshape(confidence_map,
-                                [img_h_cells * settings.cell, img_w_cells * settings.cell])
+                                [img_h_cells * cell_size, img_w_cells * cell_size])
     # threshold confidence level
-    xs, ys = np.where(confidence_map >= settings.confidence_thresh)
+    xs, ys = np.where(confidence_map >= confidence_thresh)
+    confidence = confidence_map[xs, ys]
+    return xs, ys, confidence
+
+
+def get_points(pointness_map, img_h, img_w, settings):
+    pointness_map = pointness_map.data.cpu().numpy().squeeze()
+    xs, ys, confidence = get_points_coordinates(pointness_map, img_h, img_w, settings.cell, settings.confidence_thresh)
     # if we didn't find any features
     if len(xs) == 0:
         return np.zeros((3, 0))
@@ -51,7 +58,7 @@ def get_points(pointness_map, img_h, img_w, settings):
     points = np.zeros((3, len(xs)))
     points[0, :] = ys
     points[1, :] = xs
-    points[2, :] = confidence_map[xs, ys]
+    points[2, :] = confidence
     # NMS
     points = corners_nms(points, img_h, img_w, dist_thresh=settings.nms_dist)
     # sort by confidence(why do we need this? nms returns sorted values)

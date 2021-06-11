@@ -28,8 +28,8 @@ class SuperPointSettings:
         self.border_remove = 4  # Remove points this close to the border.
 
         # training params
-        self.batch_size = 8
-        self.learning_rate = 0.01
+        self.batch_size = 32
+        self.learning_rate = 0.001
         self.epochs = 5
 
     def read_options(self, opt):
