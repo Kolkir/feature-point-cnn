@@ -1,3 +1,4 @@
+# The code is based on https://github.com/rpautrat/SuperPoint/ that is licensed as:
 # MIT License
 #
 # Copyright (c) 2018 Paul-Edouard Sarlin & Rémi Pautrat
@@ -19,7 +20,6 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-# https://github.com/rpautrat/SuperPoint/
 
 import cv2 as cv
 import numpy as np
