@@ -13,7 +13,7 @@ class TrainWrapper(object):
             self.net = self.net.cuda()
             print('Model moved to GPU')
 
-    def train(self):
+    def train_magic_point(self):
         self.net.disable_descriptor()
         magic_point_trainer = MagicPointTrainer(self.synthetic_dataset_path, self.checkpoint_path, self.settings)
         magic_point_trainer.train(self.net)

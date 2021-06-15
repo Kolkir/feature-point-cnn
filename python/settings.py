@@ -28,6 +28,7 @@ class SuperPointSettings:
         self.border_remove = 4  # Remove points this close to the border.
 
         # training params
+        self.train_image_size = (240, 320)
         self.batch_size = 32
         self.learning_rate = 0.001
         self.epochs = 5

@@ -202,7 +202,6 @@ def test_homography(image):
     wrapped_img = wrapped_image.permute(1, 2, 0).numpy()
     restored_img = restored_image.permute(1, 2, 0).numpy()
 
-
     cv2.imshow("Original image", original_img)
     cv2.imshow("Wrapped image", wrapped_img)
     cv2.imshow("Restored image", restored_img)

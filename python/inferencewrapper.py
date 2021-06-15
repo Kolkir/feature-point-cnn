@@ -1,8 +1,10 @@
+from saveutils import load_checkpoint_for_inference
 from superpoint import SuperPoint
 import torch
 import torchsummary
-from weightsloader import load_weights_legacy
+
 import torch.quantization
+import numpy as np
 from netutils import get_points, get_descriptors
 
 
@@ -13,14 +15,11 @@ class InferenceWrapper(object):
         self.settings = settings
 
         self.net = SuperPoint(self.settings)
-        miss_keys, _ = self.net.load_state_dict(load_weights_legacy(weights_path))
-        if miss_keys:
-            print('Can not load network some keys are missing:')
-            print(miss_keys)
-            exit(-1)
+        load_checkpoint_for_inference(weights_path, self.net)
 
-        # model must be set to eval mode for static quantization logic to work
-        self.net.eval()
+        if settings.cuda:
+            self.net = self.net.cuda()
+            print('Model moved to GPU')
 
         if settings.do_quantization:
             # x86
@@ -44,22 +43,19 @@ class InferenceWrapper(object):
             model_fp32_prepared = torch.quantization.prepare(model_fp32_fused)
             self.net = torch.quantization.convert(model_fp32_prepared)
         else:
-            torchsummary.summary(self.net, (1, 640, 480), device='cpu')
-
-        if settings.cuda:
-            self.net = self.net.cuda()
-            print('Model moved to GPU')
+            torchsummary.summary(self.net, (1, 240, 320), device='cuda' if settings.cuda else 'cpu')
 
     def run(self, img):
-        """ Process a numpy image to extract points and descriptors.
+        """ Process a image to extract points and descriptors.
         Input
-          img - HxW numpy float32 input image in range [0,1].
+          img - HxW float32 input image in range [0,1].
         Output
           corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
           desc - 256xN numpy array of corresponding unit normalized descriptors.
           """
-        img_h, img_w = img.shape[0], img.shape[1]
         input_tensor = self.prepare_input(img)
+        img_h, img_w = img.shape[1], img.shape[2]
+
         outs = self.net.forward(input_tensor)
         pointness_map, descriptors_map = outs[0], outs[1]
 
@@ -69,12 +65,16 @@ class InferenceWrapper(object):
         return points, descriptors
 
     def prepare_input(self, img):
-        assert img.ndim == 2, 'Image must be grayscale.'
-        assert img.dtype == np.float32, 'Image must be float32.'
-        input_tensor = img.copy()
-        img_h, img_w = img.shape[0], img.shape[1]
-        input_tensor = input_tensor.reshape(1, img_h, img_w)
-        input_tensor = torch.from_numpy(input_tensor)
+        if not torch.is_tensor(img):
+            assert img.ndim == 2, 'Image must be grayscale.'
+            assert img.dtype == np.float32, 'Image must be float32.'
+            img_h, img_w = img.shape[0], img.shape[1]
+            input_tensor = img.copy()
+            input_tensor = input_tensor.reshape(1, img_h, img_w)
+            input_tensor = torch.from_numpy(input_tensor)
+        else:
+            input_tensor = img
+            img_h, img_w = img.shape[1], img.shape[2]
         input_tensor = torch.autograd.Variable(input_tensor).view(1, 1, img_h, img_w)
         if self.settings.cuda:
             input_tensor = input_tensor.cuda()

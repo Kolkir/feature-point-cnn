@@ -1,4 +1,6 @@
 import argparse
+
+from preprocess_coco import preprocess_coco
 from settings import SuperPointSettings
 from inferencewrapper import InferenceWrapper
 from trainwrapper import TrainWrapper
@@ -38,13 +40,18 @@ def main():
 
     train_parser = subparsers.add_parser('train')
     train_parser.add_argument('-p', '--checkpoint_path', type=str, default='checkpoints',
-                             help='Path where training checkpoints will be saved.')
+                              help='Path where training checkpoints will be saved.')
     train_group = train_parser.add_mutually_exclusive_group()
-    train_group.required = True
-    train_group.add_argument('-s', '--synthetic_path', type=str, default='synthetic_shapes',
+    #train_group.required = True
+    train_group.add_argument('-s', '--synthetic_path', type=str,
                              help='Path to the synthetic shapes dataset.')
-    train_group.add_argument('-c', '--coco_path', type=str, default='coco',
-                             help='Path to the coco dataset.')
+    train_coco_group = train_group.add_argument_group()
+    train_coco_group.add_argument('-c', '--coco_path', type=str,
+                                  help='Path to the coco dataset.')
+    train_coco_group.add_argument('-g', '--generate_points', action='store_true',
+                                  help='Generate points for the COCO dataset.')
+    train_coco_group.add_argument('--magic_point_weights', type=str, default='magicpoint.pth',
+                                  help='Path to pretrained MagicPoint weights file.')
 
     opt = parser.parse_args()
     print(opt)
@@ -52,52 +59,60 @@ def main():
     settings.read_options(opt)
 
     if opt.run_mode == "inference":
-        camera = Camera(opt.camid, opt.W, opt.H)
-        print('Loading pre-trained network...')
-        net = InferenceWrapper(weights_path=opt.weights_path, settings=settings)
-        print('Successfully loaded pre-trained network.')
-
-        win_name = 'SuperPoint features'
-        cv2.namedWindow(win_name)
-
-        prev_frame_time = 0
-        while True:
-            frame, ret = camera.get_frame()
-            if ret:
-                points, descriptors = net.run(frame)
-
-                res_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
-                for point in points.T:
-                    point_int = (int(round(point[0])), int(round(point[1])))
-                    cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
-
-                # draw FPS
-                new_frame_time = time.time()
-                fps = 1 / (new_frame_time - prev_frame_time)
-                prev_frame_time = new_frame_time
-                fps = 'FPS: ' + str(int(fps))
-                cv2.putText(res_img, fps, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (200, 200, 200), 2, cv2.LINE_AA)
-
-                cv2.imshow(win_name, res_img)
-                key = cv2.waitKey(delay=1)
-                if key == ord('q'):
-                    print('Quitting, \'q\' pressed.')
-                    break
-                if key == ord('s'):
-                    net.trace(frame, opt.out_file_name)
-                    print('Model saved, \'s\' pressed.')
-            else:
-                break
-        camera.close()
-        cv2.destroyAllWindows()
+        run_inference(opt, settings)
 
     elif opt.run_mode == "train":
-        print('Start network training...')
-        train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path, synthetic_dataset_path=opt.synthetic_path,
-                                 settings=settings)
-        train_net.train()
+        if opt.synthetic_path:
+            print('Start MagicPoint training...')
+            train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path, synthetic_dataset_path=opt.synthetic_path,
+                                     settings=settings)
+            train_net.train_magic_point()
+            print('MagicPoint training finished')
+        elif opt.coco_path and opt.generate_points:
+            preprocess_coco(opt.coco_path, opt.magic_point_weights, settings)
+        elif opt.coco_path:
+            pass
     else:
         print('Invalid run mode')
+
+
+def run_inference(opt, settings):
+    camera = Camera(opt.camid, opt.W, opt.H)
+    print('Loading pre-trained network...')
+    net = InferenceWrapper(weights_path=opt.weights_path, settings=settings)
+    print('Successfully loaded pre-trained network.')
+    win_name = 'SuperPoint features'
+    cv2.namedWindow(win_name)
+    prev_frame_time = 0
+    while True:
+        frame, ret = camera.get_frame()
+        if ret:
+            points, descriptors = net.run(frame)
+
+            res_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
+            for point in points.T:
+                point_int = (int(round(point[0])), int(round(point[1])))
+                cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
+
+            # draw FPS
+            new_frame_time = time.time()
+            fps = 1 / (new_frame_time - prev_frame_time)
+            prev_frame_time = new_frame_time
+            fps = 'FPS: ' + str(int(fps))
+            cv2.putText(res_img, fps, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (200, 200, 200), 2, cv2.LINE_AA)
+
+            cv2.imshow(win_name, res_img)
+            key = cv2.waitKey(delay=1)
+            if key == ord('q'):
+                print('Quitting, \'q\' pressed.')
+                break
+            if key == ord('s'):
+                net.trace(frame, opt.out_file_name)
+                print('Model saved, \'s\' pressed.')
+        else:
+            break
+    camera.close()
+    cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
