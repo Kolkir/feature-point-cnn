@@ -4,22 +4,20 @@ from torch.utils.data import DataLoader
 
 
 class BaseTrainer(object):
-    def __init__(self, train_dataset, test_dataset, validation_dataset, batch_size):
+    def __init__(self, train_dataset, test_dataset, batch_size):
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
-        self.validation_dataset = validation_dataset
         self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
         self.test_dataloader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=True)
-        self.validation_dataloader = DataLoader(self.validation_dataset, batch_size=batch_size, shuffle=True)
 
     def train_loop(self, model, loss_fn, optimizer, n_iter):
         size = len(self.train_dataset)
         for batch, (image, true_points_map) in enumerate(self.train_dataloader):
-            pointness_map, _ = model.forward(image)
+            pointness_map, descriptors_map = model.forward(image)
             # image shape [batch_dim, channels = 1, h, w]
             if model.cuda():
                 true_points_map = true_points_map.cuda()
-            loss = loss_fn(pointness_map, true_points_map)
+            loss = loss_fn(pointness_map, descriptors_map, true_points_map)
 
             optimizer.zero_grad()
             loss.backward()
@@ -42,10 +40,10 @@ class BaseTrainer(object):
         last_pointness_map = None
         with torch.no_grad():
             for image, true_points_map in self.test_dataloader:
-                pointness_map, _ = model(image)
+                pointness_map, descriptors_map = model(image)
                 if model.cuda():
                     true_points_map = true_points_map.cuda()
-                test_loss += loss_fn(pointness_map, true_points_map).item()
+                test_loss += loss_fn(pointness_map, descriptors_map, true_points_map).item()
 
                 softmax_result = softmax(pointness_map)
                 f1 += f1_metric(softmax_result.cpu(), true_points_map.cpu())

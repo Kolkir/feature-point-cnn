@@ -7,18 +7,17 @@ from torch.utils.tensorboard import SummaryWriter
 
 from basetrainer import BaseTrainer
 from netutils import get_points
-from losses import DetectorLoss
-from synthetic_dataset import SyntheticDataset
+from coco_dataset import CocoDataset
 from saveutils import load_checkpoint, save_checkpoint
 
 
-class MagicPointTrainer(BaseTrainer):
-    def __init__(self, synthetic_dataset_path, checkpoint_path, settings):
+class SuperPointTrainer(BaseTrainer):
+    def __init__(self, coco_dataset_path, checkpoint_path, settings):
         self.settings = settings
         self.checkpoint_path = checkpoint_path
-        self.train_dataset = SyntheticDataset(synthetic_dataset_path, settings, 'training')
-        self.test_dataset = SyntheticDataset(synthetic_dataset_path, settings, 'test')
-        super(MagicPointTrainer, self).__init__(self.train_dataset, self.test_dataset, self.settings.batch_size)
+        self.train_dataset = CocoDataset(coco_dataset_path, settings, 'train')
+        self.test_dataset = CocoDataset(coco_dataset_path, settings, 'test')
+        super(SuperPointTrainer, self).__init__(self.train_dataset, self.test_dataset, self.settings.batch_size)
         self.learning_rate = self.settings.learning_rate
         self.epochs = self.settings.epochs
         self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
@@ -26,7 +25,9 @@ class MagicPointTrainer(BaseTrainer):
 
     def train(self, model):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
-        loss_fn = DetectorLoss(self.settings.cuda)
+
+        # TODO: Implement complex loss
+        loss_fn = torch.nn.CrossEntropyLoss()
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
@@ -46,15 +47,8 @@ class MagicPointTrainer(BaseTrainer):
     def test_log_fn(self, loss_value, f1_value, image, pointness_map, n_iter):
         self.summary_writer.add_scalar('Loss/test', loss_value, n_iter)
         self.summary_writer.add_scalar('F1/test', f1_value, n_iter)
-        img_h = image.shape[2]
-        img_w = image.shape[3]
-        points = get_points(pointness_map[0, :, :, :], img_h, img_w, self.settings)
-        frame = image[0, 0, :, :].cpu().numpy()
-        res_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
-        for point in points.T:
-            point_int = (int(round(point[0])), int(round(point[1])))
-            cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
-        self.summary_writer.add_image('Detector result', res_img.transpose([2, 0, 1]), n_iter)
+        # TODO: Implement
+        # self.summary_writer.add_image('Detector result', res_img.transpose([2, 0, 1]), n_iter)
 
     def train_log_fn(self, loss, n_iter):
         self.summary_writer.add_scalar('Loss/train', loss, self.train_iter)

@@ -64,14 +64,20 @@ def main():
     elif opt.run_mode == "train":
         if opt.synthetic_path:
             print('Start MagicPoint training...')
-            train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path, synthetic_dataset_path=opt.synthetic_path,
+            train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path,
                                      settings=settings)
-            train_net.train_magic_point()
+            train_net.train_magic_point(opt.synthetic_path)
             print('MagicPoint training finished')
         elif opt.coco_path and opt.generate_points:
+            print('Pre-processing COCO dataset...')
             preprocess_coco(opt.coco_path, opt.magic_point_weights, settings)
+            print('Pre-processing finished')
         elif opt.coco_path:
-            pass
+            print('Start SuperPoint training...')
+            train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path,
+                                     settings=settings)
+            train_net.train_super_point(opt.coco_path)
+            print('SuperPoint training finished')
     else:
         print('Invalid run mode')
 

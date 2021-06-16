@@ -21,7 +21,7 @@ def read_points(filename, cell_size, img_h, img_w):
 
 class SyntheticDataset(Dataset):
     def __init__(self, path, settings, dataset_type, seed=0):
-        if dataset_type != 'training' and dataset_type != 'validation' and dataset_type != 'test':
+        if dataset_type != 'training' and dataset_type != 'test':
             raise Exception('Incorrect synthetic dataset type')
         self.settings = settings
         self.images_path = os.path.join(path, 'images', dataset_type)
