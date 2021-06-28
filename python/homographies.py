@@ -31,6 +31,8 @@ import numpy as np
 import sys
 import cv2
 
+from losses import masked_cross_entropy
+
 
 def truncated_normal(shape, mean=0.0, stddev=1.0, dtype=torch.float32):
     a = mean - 2 * stddev
@@ -271,7 +273,7 @@ def filter_points(points, shape):
     """
     shape_tensor = torch.tensor(shape, dtype=torch.float) - 1
     mask = (points >= 0) & (points <= shape_tensor)
-    mask = torch.prod(mask, dim=-1,dtype=torch.bool)
+    mask = torch.prod(mask, dim=-1, dtype=torch.bool)
     return points[mask]
 
 
@@ -282,6 +284,13 @@ def draw_points(image, points, color):
 
 
 def test_homography(image):
+    # TEST cross entropy loss
+    # logits = torch.rand(size=[320, 200, 65])
+    # targets = torch.randint(low=0, high=65, size=[320, 200])
+    # weight = torch.ones(65)
+    # mask = torch.randint(0, 2, size=[320, 200])
+    # loss = masked_cross_entropy(logits, targets, weight, mask)
+
     # Generate random feature points
     img_min_dim = min(image.shape[1], image.shape[2])
     num_points = 20

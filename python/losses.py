@@ -1,24 +1,46 @@
 import torch
 import numpy as np
+from torch.nn.functional import log_softmax
+
+
+def masked_cross_entropy(logits, targets, class_weights, mask):
+    logits_flat = logits.view(-1, logits.size(-1))
+    log_probabilities_flat = log_softmax(logits_flat)
+    targets_flat = targets.view(-1, 1)
+    losses_flat = -torch.gather(log_probabilities_flat, dim=1, index=targets_flat)
+    # apply weights
+    weights_tensor = torch.ones(size=logits.shape)
+    weights_tensor = weights_tensor * class_weights
+    weights_tensor_flat = weights_tensor.view(-1, weights_tensor.size(-1))
+    weights_tensor_flat = torch.gather(weights_tensor_flat, dim=1, index=targets_flat)
+    losses_flat = losses_flat * weights_tensor_flat
+    # restore dimensions
+    losses = losses_flat.view(*targets.size())
+    # apply mask
+    losses = losses * mask.float()
+    # average
+    loss = losses.sum() / torch.count_nonzero(mask)
+
+    return loss
 
 
 class DetectorLoss(object):
     def __init__(self, is_cuda):
         # configure class weights to better predict points of interest rather than empty ones,
         # because there are much more empty points
-        self.class_weight = np.ones(65)
+        self.class_weight = np.ones(65)  # 65 - when there no any point prediction for 8x8 patch
         self.class_weight[64] = 0.01
         self.class_weight = torch.from_numpy(self.class_weight).to(torch.float32)
         if is_cuda:
             self.class_weight = self.class_weight.cuda()
-        self.cross_entropy = torch.nn.CrossEntropyLoss(weight=self.class_weight)
+        # self.cross_entropy = torch.nn.CrossEntropyLoss(weight=self.class_weight)
 
-    def forward(self, pointness_map, descriptors_map, true_points_map):
-        return self.cross_entropy(pointness_map, true_points_map)
+    def forward(self, points, true_points, valid_mask):
+        # return self.cross_entropy(points, true_points)
+        return masked_cross_entropy(points, true_points, self.class_weight, valid_mask)
 
-    def __call__(self, pointness_map, descriptors_map, true_points_map):
-        return self.forward(pointness_map, descriptors_map, true_points_map)
-
+    def __call__(self, points, true_points, descriptors, warped_descriptors, valid_mask):
+        return self.forward(points, true_points, valid_mask)
 
 # def descriptor_loss(descriptors, warped_descriptors, homographies,
 #                     valid_mask=None, **config):
