@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import numpy as np
 
+from homographies import homographic_augmentation
+
 
 class CocoDataset(Dataset):
     def __init__(self, path, settings, dataset_type, seed=0):
@@ -19,9 +21,10 @@ class CocoDataset(Dataset):
 
     def __getitem__(self, index):
         item_data = np.load(self.items[index])
-        image = item_data['image']
-        points = item_data['points']
-        return torch.from_numpy(image), torch.from_numpy(points)
+        image = torch.from_numpy(item_data['image'])
+        points = torch.from_numpy(item_data['points'])
+        warped_image, warped_points, valid_mask = homographic_augmentation(image, points)
+        return image, points, warped_image, warped_points, valid_mask
 
     def __len__(self):
         return len(self.items)

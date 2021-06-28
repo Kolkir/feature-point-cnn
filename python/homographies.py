@@ -25,6 +25,7 @@ from math import pi
 import torch
 from scipy.stats import truncnorm
 from torchvision.transforms import functional_tensor
+from kornia.morphology import erosion
 import torchvision
 import numpy as np
 import sys
@@ -182,29 +183,130 @@ def mat2flat(h):
     return (h / h[:, 8:9])[:, :8]
 
 
-def homography_transform(t, h_coeffs):
-    return functional_tensor.perspective(t, h_coeffs.numpy().flatten())
+def homography_transform(t, h_coeffs, interpolation='bilinear'):
+    return functional_tensor.perspective(t, h_coeffs.numpy().flatten(), interpolation=interpolation)
 
 
-def test_homography(image):
+def homographic_augmentation(image, points, valid_border_margin=3, add_homography=False):
     # Sample random homography transform
     img_h = image.shape[1]
     img_w = image.shape[2]
-    h = sample_homography([img_h, img_w])
-    h_inv = invert_homography(h)
+    image_shape = [img_h, img_w]
+    homography = sample_homography(image_shape)
+    #  Apply transformation
+    warped_image = homography_transform(image, homography)
+    valid_mask = compute_valid_mask(image_shape, homography,
+                                    valid_border_margin)
 
-    # Apply transformation
-    wrapped_image = homography_transform(image, h)
-    restored_image = homography_transform(wrapped_image, h_inv)
+    warped_points = warp_points(points, homography)
+    warped_points = filter_points(warped_points, image_shape)
+
+    if add_homography:
+        return warped_image, warped_points, valid_mask, homography
+    else:
+        return warped_image, warped_points, valid_mask
+
+
+def compute_valid_mask(image_shape, homography, erosion_radius=0):
+    """
+    Compute a boolean mask of the valid pixels resulting from an homography applied to
+    an image of a given shape. Pixels that are False correspond to bordering artifacts.
+    A margin can be discarded using erosion.
+
+    Arguments:
+        input_shape: Tensor of rank 2 representing the image shape, i.e. `[H, W]`.
+        homography: Tensor of shape (B, 8) or (8,), where B is the batch size.
+        erosion_radius: radius of the margin to be discarded.
+
+    Returns: a Tensor of type `int32` and shape (H, W).
+    """
+    mask = torch.ones(image_shape)
+    if len(mask.shape) == 2:
+        mask.unsqueeze_(dim=0)
+    mask = homography_transform(mask, homography, interpolation='nearest')
+    if erosion_radius > 0:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (erosion_radius * 2,) * 2)
+        kernel = torch.from_numpy(kernel)
+        kernel = kernel.to(dtype=torch.int32)
+        # image should be WxCxHxW
+        mask.unsqueeze_(dim=0)
+        mask = erosion(mask, kernel)
+        mask.squeeze_(dim=0)  # remove batch dim
+    return mask.to(dtype=torch.int32)
+
+
+def warp_points(points, homography):
+    """
+    Warp a list of points with the INVERSE of the given homography.
+
+    Arguments:
+        points: list of N points, shape (N, 2).
+        homography: batched or not (shapes (B, 8) and (8,) respectively).
+
+    Returns: a Tensor of shape (N, 2) or (B, N, 2) (depending on whether the homography
+            is batched) containing the new coordinates of the warped points.
+    """
+    H = homography.unsqueeze(dim=0) if len(homography.shape) == 1 else homography
+
+    # Get the points to the homogeneous format
+    num_points = points.shape[0]
+    points = points.to(dtype=torch.float32)
+    # points = torch.flip(points, dims=(1,))  # flip x and y coordinates
+    points = torch.cat([points, torch.ones([num_points, 1], dtype=torch.float32)], dim=-1)
+
+    # Apply the homography
+    H_inv = flat2mat(invert_homography(H))
+    H_inv = H_inv.permute(2, 1, 0)
+    warped_points = torch.tensordot(points, H_inv, [[1], [0]])
+    warped_points = warped_points[:, :2, :] / warped_points[:, 2:, :]
+    # warped_points = torch.flip(warped_points, dims=(1,))  # flip x and y coordinates
+    warped_points = warped_points.squeeze_(2)
+
+    return warped_points[0] if len(homography.shape) == 1 else warped_points
+
+
+def filter_points(points, shape):
+    """
+        Remove points laying out of the image shape
+    """
+    shape_tensor = torch.tensor(shape, dtype=torch.float) - 1
+    mask = (points >= 0) & (points <= shape_tensor)
+    mask = torch.prod(mask, dim=-1,dtype=torch.bool)
+    return points[mask]
+
+
+def draw_points(image, points, color):
+    for point in points:
+        point_int = (int(round(point[0])), int(round(point[1])))
+        cv2.circle(image, point_int, 5, color, -1, lineType=16)
+
+
+def test_homography(image):
+    # Generate random feature points
+    img_min_dim = min(image.shape[1], image.shape[2])
+    num_points = 20
+    points = torch.randint(0, img_min_dim, (num_points, 2))
+
+    # Sample random homography transform and apply transformation
+    warped_image, warped_points, valid_mask, homography = homographic_augmentation(image, points, valid_border_margin=3,
+                                                                                   add_homography=True)
+    h_inv = invert_homography(homography)
+    restored_image = homography_transform(warped_image, h_inv)
 
     # Draw result
-    original_img = image.permute(1, 2, 0).numpy()
-    wrapped_img = wrapped_image.permute(1, 2, 0).numpy()
+    original_img = cv2.UMat(image.permute(1, 2, 0).numpy())
+    warped_img = cv2.UMat(warped_image.permute(1, 2, 0).numpy())
     restored_img = restored_image.permute(1, 2, 0).numpy()
+    mask_img = valid_mask.permute(1, 2, 0).numpy().astype(np.uint8)
+    mask_img = mask_img * 255
+
+    draw_points(original_img, points.numpy(), color=(0, 255, 0))
+    draw_points(warped_img, warped_points.numpy(), color=(0, 0, 255))
 
     cv2.imshow("Original image", original_img)
-    cv2.imshow("Wrapped image", wrapped_img)
+    cv2.imshow("Warped image", warped_img)
     cv2.imshow("Restored image", restored_img)
+    cv2.imshow("Mask", mask_img)
 
     key = cv2.waitKey(delay=0)
 
