@@ -17,7 +17,7 @@ class BaseTrainer(object):
             points, descriptors = model.forward(image)
             wraped_points, wraped_descriptors = model.forward(wraped_image)
             # image shape [batch_dim, channels = 1, h, w]
-            if self.is_cuda():
+            if self.is_cuda:
                 true_points = true_points.cuda()
             loss = loss_fn(points, true_points, descriptors, wraped_descriptors, valid_mask)
 
@@ -44,12 +44,12 @@ class BaseTrainer(object):
             for image, true_points, wraped_image, wraped_points, valid_mask in self.test_dataloader:
                 points, descriptors = model(image)
                 wraped_points, wraped_descriptors = model.forward(wraped_image)
-                if self.is_cuda():
-                    true_points = points.cuda()
+                if self.is_cuda:
+                    true_points = true_points.cuda()
                 test_loss += loss_fn(points, true_points, descriptors, wraped_descriptors, valid_mask).item()
 
                 softmax_result = softmax(points)
-                f1 += f1_metric(softmax_result.cpu(), points.cpu())
+                f1 += f1_metric(softmax_result.cpu(), true_points.cpu())
                 batches_num += 1
 
                 last_points = points

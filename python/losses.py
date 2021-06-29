@@ -4,23 +4,24 @@ from torch.nn.functional import log_softmax
 
 
 def masked_cross_entropy(logits, targets, class_weights, mask):
-    logits_flat = logits.view(-1, logits.size(-1))
-    log_probabilities_flat = log_softmax(logits_flat)
-    targets_flat = targets.view(-1, 1)
-    losses_flat = -torch.gather(log_probabilities_flat, dim=1, index=targets_flat)
-    # apply weights
-    weights_tensor = torch.ones(size=logits.shape)
-    weights_tensor = weights_tensor * class_weights
-    weights_tensor_flat = weights_tensor.view(-1, weights_tensor.size(-1))
-    weights_tensor_flat = torch.gather(weights_tensor_flat, dim=1, index=targets_flat)
-    losses_flat = losses_flat * weights_tensor_flat
-    # restore dimensions
-    losses = losses_flat.view(*targets.size())
+    log_probabilities = log_softmax(logits, dim=1)
+    losses = -torch.gather(log_probabilities, dim=1, index=targets.unsqueeze(1))
+    # weights
+    weights = class_weights.view(-1, 1, 1)
+    weights = weights.expand(-1, logits.size(2), logits.size(3))
+    weights = torch.gather(weights, dim=0, index=targets)
+    losses = losses * weights.unsqueeze(1)
     # apply mask
-    losses = losses * mask.float()
-    # average
-    loss = losses.sum() / torch.count_nonzero(mask)
+    if len(mask.shape) > 2:  # skip empty masks
+        losses = losses * mask.float()
+        losses_flat = losses.flatten(start_dim=1)
+        loss = torch.sum(losses_flat, dim=1)
+        loss = loss / torch.count_nonzero(mask, dim=1)
+    else:
+        losses_flat = losses.flatten(start_dim=1)
+        loss = torch.mean(losses_flat, dim=1)
 
+    loss = torch.mean(loss)
     return loss
 
 

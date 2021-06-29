@@ -18,7 +18,8 @@ class MagicPointTrainer(BaseTrainer):
         self.checkpoint_path = checkpoint_path
         self.train_dataset = SyntheticDataset(synthetic_dataset_path, settings, 'training')
         self.test_dataset = SyntheticDataset(synthetic_dataset_path, settings, 'test')
-        super(MagicPointTrainer, self).__init__(self.train_dataset, self.test_dataset, self.settings.batch_size)
+        super(MagicPointTrainer, self).__init__(self.settings.cuda, self.train_dataset, self.test_dataset,
+                                                self.settings.batch_size)
         self.learning_rate = self.settings.learning_rate
         self.epochs = self.settings.epochs
         self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))

@@ -71,6 +71,11 @@ class SuperPoint(nn.Module):
           point: Output point pytorch tensor shaped N x d1 x H/8 x W/8.
           desc: Output descriptor pytorch tensor shaped N x 256 x H/8 x W/8.
         """
+        # this function can be called for warped image during MagicPoint training
+        # so should it should be disabled
+        if len(x.shape) <= 2:
+            return torch.empty((1,)), torch.empty((1,))
+
         if self.settings.cuda:
             x = x.cuda()
 
