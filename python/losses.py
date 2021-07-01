@@ -12,7 +12,7 @@ def masked_cross_entropy(logits, targets, class_weights, mask):
     weights = torch.gather(weights, dim=0, index=targets)
     losses = losses * weights.unsqueeze(1)
     # apply mask
-    if len(mask.shape) > 2:  # skip empty masks
+    if mask:  # skip empty masks
         losses = losses * mask.float()
         losses_flat = losses.flatten(start_dim=1)
         loss = torch.sum(losses_flat, dim=1)
@@ -34,17 +34,20 @@ class DetectorLoss(object):
         self.class_weight = torch.from_numpy(self.class_weight).to(torch.float32)
         if is_cuda:
             self.class_weight = self.class_weight.cuda()
-        # self.cross_entropy = torch.nn.CrossEntropyLoss(weight=self.class_weight)
 
     def forward(self, points, true_points, valid_mask):
-        # return self.cross_entropy(points, true_points)
+        if valid_mask and len(valid_mask.shape) <= 2:  # skip empty masks
+            valid_mask = None
         return masked_cross_entropy(points, true_points, self.class_weight, valid_mask)
 
     def __call__(self, points, true_points, descriptors, warped_descriptors, valid_mask):
         return self.forward(points, true_points, valid_mask)
 
-# def descriptor_loss(descriptors, warped_descriptors, homographies,
-#                     valid_mask=None, **config):
+
+def descriptor_loss(descriptors, warped_descriptors, homographies, valid_mask):
+    return 10
+
+
 #     # Compute the position of the center pixel of every cell in the image
 #     (batch_size, Hc, Wc) = tf.unstack(tf.to_int32(tf.shape(descriptors)[:3]))
 #     coord_cells = tf.stack(tf.meshgrid(
@@ -116,37 +119,30 @@ class DetectorLoss(object):
 #     return loss
 
 
-# def global_loss(self, outputs, inputs, **config):
-#     logits = outputs['logits']
-#     warped_logits = outputs['warped_results']['logits']
-#     descriptors = outputs['descriptors_raw']
-#     warped_descriptors = outputs['warped_results']['descriptors_raw']
-#
-#     # Switch to 'channels last' once and for all
-#     if config['data_format'] == 'channels_first':
-#         logits = tf.transpose(logits, [0, 2, 3, 1])
-#         warped_logits = tf.transpose(warped_logits, [0, 2, 3, 1])
-#         descriptors = tf.transpose(descriptors, [0, 2, 3, 1])
-#         warped_descriptors = tf.transpose(warped_descriptors, [0, 2, 3, 1])
-#
-#     # Compute the loss for the detector head
-#     detector_loss = utils.detector_loss(
-#         inputs['keypoint_map'], logits,
-#         valid_mask=inputs['valid_mask'], **config)
-#     warped_detector_loss = utils.detector_loss(
-#         inputs['warped']['keypoint_map'], warped_logits,
-#         valid_mask=inputs['warped']['valid_mask'], **config)
-#
-#     # Compute the loss for the descriptor head
-#     descriptor_loss = utils.descriptor_loss(
-#         descriptors, warped_descriptors, outputs['homography'],
-#         valid_mask=inputs['warped']['valid_mask'], **config)
-#
-#     tf.summary.scalar('detector_loss1', detector_loss)
-#     tf.summary.scalar('detector_loss2', warped_detector_loss)
-#     tf.summary.scalar('detector_loss_full', detector_loss + warped_detector_loss)
-#     tf.summary.scalar('descriptor_loss', config['lambda_loss'] * descriptor_loss)
-#
-#     loss = (detector_loss + warped_detector_loss
-#             + config['lambda_loss'] * descriptor_loss)
-#     return loss
+class GlobalLoss(object):
+    def __init__(self, is_cuda, lambda_loss):
+        self.detector_loss = DetectorLoss(is_cuda)
+        self.lambda_loss = lambda_loss
+
+    def forward(self, points,
+                true_points,
+                warped_points,
+                warped_true_points,
+                descriptors,
+                warped_descriptors,
+                homographies,
+                valid_mask):
+        # Compute the loss for the detector head
+        detector_loss_value = self.detector_loss.forward(points, true_points, valid_mask=None)
+        warped_detector_loss_value = self.detector_loss.forward(
+            warped_points, warped_true_points,
+            valid_mask)
+
+        # Compute the loss for the descriptor head
+        descriptor_loss_value = descriptor_loss(
+            descriptors, warped_descriptors, homographies, valid_mask
+        )
+
+        loss = (detector_loss_value + warped_detector_loss_value
+                + self.lambda_loss * descriptor_loss_value)
+        return loss
