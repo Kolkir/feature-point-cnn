@@ -36,7 +36,7 @@ class DetectorLoss(object):
             self.class_weight = self.class_weight.cuda()
 
     def forward(self, points, true_points, valid_mask):
-        if valid_mask and len(valid_mask.shape) <= 2:  # skip empty masks
+        if (valid_mask is not None) and len(valid_mask.shape) <= 2:  # skip empty masks
             valid_mask = None
         return masked_cross_entropy(points, true_points, self.class_weight, valid_mask)
 
