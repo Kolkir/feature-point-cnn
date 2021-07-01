@@ -284,13 +284,6 @@ def draw_points(image, points, color):
 
 
 def test_homography(image):
-    # TEST cross entropy loss
-    # logits = torch.rand(size=[320, 200, 65])
-    # targets = torch.randint(low=0, high=65, size=[320, 200])
-    # weight = torch.ones(65)
-    # mask = torch.randint(0, 2, size=[320, 200])
-    # loss = masked_cross_entropy(logits, targets, weight, mask)
-
     # Generate random feature points
     img_min_dim = min(image.shape[1], image.shape[2])
     num_points = 20
