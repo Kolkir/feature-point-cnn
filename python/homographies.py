@@ -31,8 +31,6 @@ import numpy as np
 import sys
 import cv2
 
-from losses import masked_cross_entropy
-
 
 def truncated_normal(shape, mean=0.0, stddev=1.0, dtype=torch.float32):
     a = mean - 2 * stddev
@@ -209,6 +207,81 @@ def homographic_augmentation(image, points, valid_border_margin=3, add_homograph
         return warped_image, warped_points, valid_mask
 
 
+def homography_adaptation(image, net, num, valid_border_margin=3, aggregation='sum'):
+    """ Performs homography adaptation.
+    Inference using multiple random warped patches of the same input image for robust
+    predictions.
+    Arguments:
+        image: A `Tensor` with shape `[B, C, H, W,]`.
+        net: A function that takes an image as input, performs inference, and outputs the
+            prediction dictionary.
+        num: the number of sampled homographies.
+        valid_border_margin: size of the border to ignore detections.
+        aggregation: how to aggregate probabilities max or sum
+    Returns:
+        A dictionary which contains the aggregated detection probabilities.
+    """
+
+    all_probs, _, _ = net(image)
+    all_counts = torch.ones_like(all_probs)
+    all_images = torch.clone(image)
+
+    all_probs.unsqueeze_(dim=-1)
+    all_counts.unsqueeze_(dim=-1)
+    all_images.unsqueeze_(dim=-1)
+
+    shape = image.shape[2:4]
+
+    def step(i, probs, counts, images):
+        # Sample image patch
+        H = sample_homography(shape)
+        H_inv = invert_homography(H)
+        warped = homography_transform(image, H)
+        count = homography_transform(torch.ones(shape).unsqueeze(0),
+                                     H_inv, interpolation='nearest')
+        mask = homography_transform(torch.ones(shape).unsqueeze(0),
+                                    H, interpolation='nearest')
+        # Ignore the detections too close to the border to avoid artifacts
+        if valid_border_margin != 0:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (valid_border_margin * 2,) * 2)
+            kernel = torch.from_numpy(kernel)
+            kernel = kernel.to(dtype=torch.int32)
+            # image should be WxCxHxW
+            count.unsqueeze_(dim=0)
+            count = erosion(count, kernel)
+            count.squeeze_(dim=0)  # remove batch dim
+            mask.unsqueeze_(dim=0)
+            mask = erosion(mask, kernel)
+            mask.squeeze_(dim=0)  # remove batch dim
+
+        # Predict detection probabilities
+        warped_prob, _, _ = net(warped)
+        warped_prob = warped_prob * mask
+        warped_prob_proj = homography_transform(warped_prob, H_inv)
+        warped_prob_proj = warped_prob_proj * count
+
+        probs = torch.cat([probs, warped_prob_proj.unsqueeze(dim=-1)], dim=-1)
+        counts = torch.cat([counts, count.unsqueeze(dim=-1)], dim=-1)
+        images = torch.cat([images, warped.unsqueeze(dim=-1)], axis=-1)
+        return probs, counts, images
+
+    for i in range(num):
+        all_probs, all_counts, all_images = step(i, all_probs, all_counts, all_images)
+
+    all_counts = torch.sum(all_counts, dim=-1)
+    max_prob = torch.max(all_probs, dim=-1)
+    mean_prob = torch.sum(all_probs, dim=-1) / all_counts
+
+    if aggregation == 'max':
+        prob = max_prob
+    elif aggregation == 'sum':
+        prob = mean_prob
+    else:
+        raise ValueError(f'Unknown aggregation method: {aggregation}')
+
+    return prob
+
+
 def compute_valid_mask(image_shape, homography, erosion_radius=0):
     """
     Compute a boolean mask of the valid pixels resulting from an homography applied to
@@ -216,7 +289,7 @@ def compute_valid_mask(image_shape, homography, erosion_radius=0):
     A margin can be discarded using erosion.
 
     Arguments:
-        input_shape: Tensor of rank 2 representing the image shape, i.e. `[H, W]`.
+        image_shape: Tensor of rank 2 representing the image shape, i.e. `[H, W]`.
         homography: Tensor of shape (B, 8) or (8,), where B is the batch size.
         erosion_radius: radius of the margin to be discarded.
 

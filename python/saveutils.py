@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from weightsloader import load_weights_legacy
+from python.weightsloader import load_weights_legacy
 import torch
 
 

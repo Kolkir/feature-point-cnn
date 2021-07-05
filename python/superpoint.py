@@ -1,6 +1,8 @@
 import torch
 from torch import nn, norm, unsqueeze, quantization
 
+from python.netutils import restore_prob_map
+
 
 def create_encoder_block(in_channels: int, out_channels: int, settings):
     conv_a = nn.Conv2d(in_channels, out_channels, settings.encoder_kernel_size, settings.encoder_stride,
@@ -63,35 +65,38 @@ class SuperPoint(nn.Module):
         detector_params = list(self.detector_conv.parameters(recurse=True))
         return encoder_params + detector_params
 
-    def forward(self, x):
+    def forward(self, image):
         """ Forward pass
         Input
           x: Image pytorch tensor shaped N x 1 x H x W.
         Output
-          point: Output point pytorch tensor shaped N x d1 x H/8 x W/8.
+          point: Output point pytorch tensor shaped N x 1 x H x W.
           desc: Output descriptor pytorch tensor shaped N x 256 x H/8 x W/8.
         """
         # this function can be called for warped image during MagicPoint training
         # so should it should be disabled
-        if len(x.shape) <= 2:
-            return torch.empty((1,)), torch.empty((1,))
+        if len(image.shape) <= 2:
+            return torch.empty((1,)), torch.empty((1,)), torch.empty((1,))
 
+        img_h, img_w = image.shape[-2:]
         if self.settings.cuda:
-            x = x.cuda()
+            image = image.cuda()
 
         if self.settings.do_quantization:
-            x = self.quant(x)
-        x = self.encoder_forward_pass(x)
-        point = self.detdesc_forward_pass(x, self.detector_conv, 'detector')
-        desc = self.descriptor_forward_pass(point, x)
+            image = self.quant(image)
+        image = self.encoder_forward_pass(image)
+        prob = self.detdesc_forward_pass(image, self.detector_conv, 'detector')
+        desc = self.descriptor_forward_pass(prob, image)
 
         if self.settings.do_quantization:
-            point = self.dequant(point)
+            prob = self.dequant(prob)
             desc = self.dequant(desc)
 
         dn = norm(desc, p=2, dim=1)
         desc = desc.div(unsqueeze(dn, 1))  # normalize
-        return point, desc
+
+        prob_map = restore_prob_map(prob, img_h, img_w, self.settings.cell)
+        return prob_map, desc, prob
 
     def descriptor_forward_pass(self, point, x):
         if self.is_descriptor_enabled:

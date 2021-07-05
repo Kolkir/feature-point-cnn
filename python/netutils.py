@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from nms import corners_nms
+from python.nms import corners_nms
 
 
 def make_points_labels(points, img_h, img_w, cell_size):
@@ -28,28 +28,32 @@ def make_points_labels(points, img_h, img_w, cell_size):
     return labels
 
 
-def get_points_coordinates(pointness_map, img_h, img_w, cell_size, confidence_thresh):
-    softmax_result = np.exp(pointness_map)
-    softmax_result = softmax_result / (np.sum(softmax_result, axis=0) + .00001)
-    # removing dustbin dimension
-    no_dustbin = softmax_result[:-1, :, :]
-    # reshape to get full resolution
-    no_dustbin = no_dustbin.transpose(1, 2, 0)
-    img_h_cells = int(img_h / cell_size)
-    img_w_cells = int(img_w / cell_size)
-    confidence_map = np.reshape(no_dustbin, [img_h_cells, img_w_cells, cell_size, cell_size])
-    confidence_map = np.transpose(confidence_map, [0, 2, 1, 3])
-    confidence_map = np.reshape(confidence_map,
-                                [img_h_cells * cell_size, img_w_cells * cell_size])
+def get_points_coordinates(prob_map, img_h, img_w, cell_size, confidence_thresh):
+    prob_map = prob_map.cpu().numpy()
     # threshold confidence level
-    xs, ys = np.where(confidence_map >= confidence_thresh)
-    confidence = confidence_map[xs, ys]
+    xs, ys = np.where(prob_map >= confidence_thresh)
+    confidence = prob_map[xs, ys]
     return xs, ys, confidence
 
 
-def get_points(pointness_map, img_h, img_w, settings):
-    pointness_map = pointness_map.data.cpu().numpy().squeeze()
-    xs, ys, confidence = get_points_coordinates(pointness_map, img_h, img_w, settings.cell, settings.confidence_thresh)
+def restore_prob_map(prob_map, img_h, img_w, cell_size):
+    softmax_result = torch.exp(prob_map)
+    softmax_result = softmax_result / (torch.sum(softmax_result, dim=0) + .00001)
+    # removing dustbin dimension
+    no_dustbin = softmax_result[:, :-1, :, :]
+    # reshape to get full resolution
+    img_h_cells = int(img_h / cell_size)
+    img_w_cells = int(img_w / cell_size)
+    no_dustbin = no_dustbin.permute([0, 2, 3, 1])
+    confidence_map = torch.reshape(no_dustbin, [-1, img_h_cells, img_w_cells, cell_size, cell_size])
+    confidence_map = confidence_map.permute([0, 1, 3, 2, 4])
+    confidence_map = torch.reshape(confidence_map,
+                                   [-1, img_h_cells * cell_size, img_w_cells * cell_size])
+    return confidence_map
+
+
+def get_points(prob_map, img_h, img_w, settings):
+    xs, ys, confidence = get_points_coordinates(prob_map, img_h, img_w, settings.cell, settings.confidence_thresh)
     # if we didn't find any features
     if len(xs) == 0:
         return np.zeros((3, 0))
