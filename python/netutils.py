@@ -29,7 +29,7 @@ def make_points_labels(points, img_h, img_w, cell_size):
 
 
 def get_points_coordinates(prob_map, img_h, img_w, cell_size, confidence_thresh):
-    prob_map = prob_map.cpu().numpy()
+    prob_map = prob_map.data.cpu().numpy()
     # threshold confidence level
     xs, ys = np.where(prob_map >= confidence_thresh)
     confidence = prob_map[xs, ys]

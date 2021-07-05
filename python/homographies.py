@@ -32,6 +32,37 @@ import sys
 import cv2
 
 
+class HomographyConfig(object):
+    def __init__(self):
+        self.num = 10
+        self.perspective = True
+        self.scaling = True
+        self.rotation = True
+        self.translation = True
+        self.n_scales = 5
+        self.n_angles = 25
+        self.scaling_amplitude = 0.1
+        self.perspective_amplitude_x = 0.1
+        self.perspective_amplitude_y = 0.1
+        self.patch_ratio = 0.5
+        self.max_angle = pi / 2
+        self.allow_artifacts = False
+        self.translation_overflow = 0.
+        self.valid_border_margin = 3
+        self.aggregation = 'sum'
+
+    def init_for_preprocess(self):
+        self.translation = True
+        self.rotation = True
+        self.scaling = True
+        self.perspective = True
+        self.scaling_amplitude = 0.2
+        self.perspective_amplitude_x = 0.2
+        self.perspective_amplitude_y = 0.2
+        self.allow_artifacts = True
+        self.patch_ratio = 0.85
+
+
 def truncated_normal(shape, mean=0.0, stddev=1.0, dtype=torch.float32):
     a = mean - 2 * stddev
     b = mean + 2 * stddev
@@ -39,6 +70,8 @@ def truncated_normal(shape, mean=0.0, stddev=1.0, dtype=torch.float32):
 
 
 def random_uniform(shape, low, high):
+    if low > high:
+        low, high = high, low
     return torch.distributions.uniform.Uniform(low, high).sample(shape)
 
 
@@ -187,16 +220,16 @@ def homography_transform(t, h_coeffs, interpolation='bilinear'):
     return functional_tensor.perspective(t, h_coeffs.numpy().flatten(), interpolation=interpolation)
 
 
-def homographic_augmentation(image, points, valid_border_margin=3, add_homography=False):
+def homographic_augmentation(image, points, config, add_homography=False):
     # Sample random homography transform
     img_h = image.shape[1]
     img_w = image.shape[2]
     image_shape = [img_h, img_w]
-    homography = sample_homography(image_shape)
+    homography = sample_homography(image_shape, config)
     #  Apply transformation
     warped_image = homography_transform(image, homography)
     valid_mask = compute_valid_mask(image_shape, homography,
-                                    valid_border_margin)
+                                    config.valid_border_margin)
 
     warped_points = warp_points(points, homography)
     warped_points = filter_points(warped_points, image_shape)
@@ -207,7 +240,7 @@ def homographic_augmentation(image, points, valid_border_margin=3, add_homograph
         return warped_image, warped_points, valid_mask
 
 
-def homography_adaptation(image, net, num, valid_border_margin=3, aggregation='sum'):
+def homography_adaptation(image, net, config):
     """ Performs homography adaptation.
     Inference using multiple random warped patches of the same input image for robust
     predictions.
@@ -234,18 +267,24 @@ def homography_adaptation(image, net, num, valid_border_margin=3, aggregation='s
 
     def step(i, probs, counts, images):
         # Sample image patch
-        H = sample_homography(shape)
+        H = sample_homography(shape, perspective=config.perspective, scaling=config.scaling, rotation=config.rotation,
+                              translation=config.translation, n_scales=config.n_scales, n_angles=config.n_angles,
+                              scaling_amplitude=config.scaling_amplitude,
+                              perspective_amplitude_x=config.perspective_amplitude_x,
+                              perspective_amplitude_y=config.perspective_amplitude_y, patch_ratio=config.patch_ratio,
+                              max_angle=config.max_angle,
+                              allow_artifacts=config.allow_artifacts, translation_overflow=config.translation_overflow)
         H_inv = invert_homography(H)
         warped = homography_transform(image, H)
-        count = homography_transform(torch.ones(shape).unsqueeze(0),
+        count = homography_transform(torch.ones(shape, device=image.device).unsqueeze(0),
                                      H_inv, interpolation='nearest')
-        mask = homography_transform(torch.ones(shape).unsqueeze(0),
+        mask = homography_transform(torch.ones(shape, device=image.device).unsqueeze(0),
                                     H, interpolation='nearest')
         # Ignore the detections too close to the border to avoid artifacts
-        if valid_border_margin != 0:
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (valid_border_margin * 2,) * 2)
+        if config.valid_border_margin != 0:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (config.valid_border_margin * 2,) * 2)
             kernel = torch.from_numpy(kernel)
-            kernel = kernel.to(dtype=torch.int32)
+            kernel = kernel.to(dtype=torch.int32, device=image.device)
             # image should be WxCxHxW
             count.unsqueeze_(dim=0)
             count = erosion(count, kernel)
@@ -265,19 +304,19 @@ def homography_adaptation(image, net, num, valid_border_margin=3, aggregation='s
         images = torch.cat([images, warped.unsqueeze(dim=-1)], axis=-1)
         return probs, counts, images
 
-    for i in range(num):
+    for i in range(config.num):
         all_probs, all_counts, all_images = step(i, all_probs, all_counts, all_images)
 
     all_counts = torch.sum(all_counts, dim=-1)
     max_prob = torch.max(all_probs, dim=-1)
     mean_prob = torch.sum(all_probs, dim=-1) / all_counts
 
-    if aggregation == 'max':
+    if config.aggregation == 'max':
         prob = max_prob
-    elif aggregation == 'sum':
+    elif config.aggregation == 'sum':
         prob = mean_prob
     else:
-        raise ValueError(f'Unknown aggregation method: {aggregation}')
+        raise ValueError(f'Unknown aggregation method: {config.aggregation}')
 
     return prob
 

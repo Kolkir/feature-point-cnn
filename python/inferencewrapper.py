@@ -1,3 +1,4 @@
+from python.homographies import homography_adaptation
 from saveutils import load_checkpoint_for_inference
 from superpoint import SuperPoint
 import torch
@@ -20,6 +21,8 @@ class InferenceWrapper(object):
         if settings.cuda:
             self.net = self.net.cuda()
             print('Model moved to GPU')
+
+        self.net.eval()
 
         if settings.do_quantization:
             # x86
@@ -45,7 +48,7 @@ class InferenceWrapper(object):
         else:
             torchsummary.summary(self.net, (1, 240, 320), device='cuda' if settings.cuda else 'cpu')
 
-    def run(self, img):
+    def run(self, img, do_homography_adaptation=False):
         """ Process a image to extract points and descriptors.
         Input
           img - HxW float32 input image in range [0,1].
@@ -56,13 +59,35 @@ class InferenceWrapper(object):
         input_tensor = self.prepare_input(img)
         img_h, img_w = img.shape[1], img.shape[2]
 
-        outs = self.net.forward(input_tensor)
-        pointness_map, descriptors_map = outs[0], outs[1]
+        point_prob_map, descriptors_map, logits = self.net.forward(input_tensor)
 
-        points = get_points(pointness_map, img_h, img_w, self.settings)
+        if len(point_prob_map.shape) > 2:
+            point_prob_map.squeeze_(0)
+            logits.squeeze_(0)
+
+        points = get_points(point_prob_map, img_h, img_w, self.settings)
         descriptors = get_descriptors(points, descriptors_map, img_h, img_w, self.settings)
 
-        return points, descriptors
+        return points, descriptors, logits
+
+    def run_with_homography_adaptation(self, img, config):
+        """ Process a image to extract points and descriptors.
+        Input
+          img - HxW float32 input image in range [0,1].
+        Output
+          corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
+          """
+        input_tensor = self.prepare_input(img)
+        img_h, img_w = img.shape[1], img.shape[2]
+
+        prob_map = homography_adaptation(input_tensor, self.net, config)
+
+        if len(prob_map.shape) > 2:
+            prob_map.squeeze_(0)
+
+        points = get_points(prob_map, img_h, img_w, self.settings)
+
+        return points
 
     def prepare_input(self, img):
         if not torch.is_tensor(img):

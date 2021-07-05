@@ -2,7 +2,7 @@ import configparser
 import unittest
 import torchvision
 import torch
-from python.homographies import homography_adaptation
+from python.homographies import homography_adaptation, HomographyConfig
 from python.saveutils import load_checkpoint_for_inference
 from python.settings import SuperPointSettings
 from python.superpoint import SuperPoint
@@ -11,9 +11,11 @@ from python.superpoint import SuperPoint
 class TestHomographies(unittest.TestCase):
 
     def test_homography_adaptation(self):
+        homo_config = HomographyConfig()
         config = configparser.ConfigParser()
         config.read('homography-test.ini')
         settings = SuperPointSettings()
+        settings.cuda = True
         net = SuperPoint(settings)
         load_checkpoint_for_inference(config['DEFAULT']['weights_path'], net)
 
@@ -24,7 +26,7 @@ class TestHomographies(unittest.TestCase):
         if settings.cuda:
             net = net.cuda()
             image = image.cuda()
-        outs = homography_adaptation(image, net, 5)
+        outs = homography_adaptation(image, net, homo_config)
         img_h, img_w = image.shape[2], image.shape[3]
         self.assertEqual(outs.shape, torch.Size([1, img_h, img_w]),
                          'Output has an incorrect shape after the homography adaptation')
