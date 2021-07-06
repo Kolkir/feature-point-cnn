@@ -1,13 +1,11 @@
 import os
 
-import cv2
-import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
 from basetrainer import BaseTrainer
-from netutils import get_points
 from coco_dataset import CocoDataset
+from python.losses import GlobalLoss
 from saveutils import load_checkpoint, save_checkpoint
 
 
@@ -25,9 +23,7 @@ class SuperPointTrainer(BaseTrainer):
 
     def train(self, model):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
-
-        # TODO: Implement complex loss
-        loss_fn = torch.nn.CrossEntropyLoss()
+        loss = GlobalLoss(self.settings.cuda)
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
@@ -38,18 +34,50 @@ class SuperPointTrainer(BaseTrainer):
 
         self.train_iter = 0
 
+        def train_loss_fn(batch_index, image, point_labels, warped_image, warped_point_labels, valid_mask, homographies):
+            _, descriptors, point_logits = model.forward(image)
+            _, warped_descriptors, warped_point_logits = model.forward(warped_image)
+            # image shape [batch_dim, channels = 1, h, w]
+            if self.is_cuda:
+                point_labels = point_labels.cuda()
+                warped_point_labels = warped_point_labels.cuda()
+
+            loss_value = loss(point_logits,
+                              point_labels,
+                              warped_point_logits,
+                              warped_point_labels,
+                              descriptors,
+                              warped_descriptors,
+                              homographies,
+                              valid_mask)
+
+            if batch_index % 100 == 0:
+                print(f"loss: {loss_value.item():>7f}")
+                self.summary_writer.add_scalar('Loss/train', loss_value.item(), self.train_iter)
+                self.train_iter += 1
+
+            return loss_value
+
+        def test_loss_fn(image, point_labels, warped_image, warped_point_labels, valid_mask, homographies):
+            _, descriptors, point_logits = model.forward(image)
+            _, warped_descriptors, warped_point_logits = model.forward(warped_image)
+            # image shape [batch_dim, channels = 1, h, w]
+            if self.is_cuda:
+                point_labels = point_labels.cuda()
+                warped_point_labels = warped_point_labels.cuda()
+
+            loss_value = loss(point_logits,
+                              point_labels,
+                              warped_point_logits,
+                              warped_point_labels,
+                              descriptors,
+                              warped_descriptors,
+                              homographies,
+                              valid_mask)
+            return loss_value
+
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch + 1}\n-------------------------------")
-            self.train_loop(model, loss_fn, optimizer, epoch)
-            self.test_loop(model, loss_fn, epoch)
-            save_checkpoint(epoch, model, optimizer, self.checkpoint_path)
-
-    def test_log_fn(self, loss_value, f1_value, image, pointness_map, n_iter):
-        self.summary_writer.add_scalar('Loss/test', loss_value, n_iter)
-        self.summary_writer.add_scalar('F1/test', f1_value, n_iter)
-        # TODO: Implement
-        # self.summary_writer.add_image('Detector result', res_img.transpose([2, 0, 1]), n_iter)
-
-    def train_log_fn(self, loss, n_iter):
-        self.summary_writer.add_scalar('Loss/train', loss, self.train_iter)
-        self.train_iter += 1
+            self.train_loop(train_loss_fn, optimizer)
+            self.test_loop(test_loss_fn)
+            save_checkpoint('super_point', epoch, model, optimizer, self.checkpoint_path)

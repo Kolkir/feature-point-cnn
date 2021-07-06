@@ -220,7 +220,7 @@ def homography_transform(t, h_coeffs, interpolation='bilinear'):
     return functional_tensor.perspective(t, h_coeffs.numpy().flatten(), interpolation=interpolation)
 
 
-def homographic_augmentation(image, points, config, add_homography=False):
+def homographic_augmentation(image, points, config):
     # Sample random homography transform
     img_h = image.shape[1]
     img_w = image.shape[2]
@@ -234,10 +234,7 @@ def homographic_augmentation(image, points, config, add_homography=False):
     warped_points = warp_points(points, homography)
     warped_points = filter_points(warped_points, image_shape)
 
-    if add_homography:
-        return warped_image, warped_points, valid_mask, homography
-    else:
-        return warped_image, warped_points, valid_mask
+    return warped_image, warped_points, valid_mask, homography
 
 
 def homography_adaptation(image, net, config):
@@ -402,8 +399,7 @@ def test_homography(image):
     points = torch.randint(0, img_min_dim, (num_points, 2))
 
     # Sample random homography transform and apply transformation
-    warped_image, warped_points, valid_mask, homography = homographic_augmentation(image, points, valid_border_margin=3,
-                                                                                   add_homography=True)
+    warped_image, warped_points, valid_mask, homography = homographic_augmentation(image, points, valid_border_margin=3)
     h_inv = invert_homography(homography)
     restored_image = homography_transform(warped_image, h_inv)
 

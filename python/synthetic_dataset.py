@@ -40,7 +40,7 @@ class SyntheticDataset(Dataset):
         img_h = image.shape[1]
         img_w = image.shape[2]
         points = read_points(self.items[index][1], self.settings.cell, img_h, img_w)
-        return image, points, torch.empty((1,)), torch.empty((1,)), torch.empty((1,))
+        return image, points
 
     def __len__(self):
         return len(self.items)

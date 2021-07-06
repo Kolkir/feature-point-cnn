@@ -40,7 +40,7 @@ class DetectorLoss(object):
             valid_mask = None
         return masked_cross_entropy(points, true_points, self.class_weight, valid_mask)
 
-    def __call__(self, points, true_points, descriptors, warped_descriptors, valid_mask):
+    def __call__(self, points, true_points, valid_mask):
         return self.forward(points, true_points, valid_mask)
 
 
@@ -146,3 +146,20 @@ class GlobalLoss(object):
         loss = (detector_loss_value + warped_detector_loss_value
                 + self.lambda_loss * descriptor_loss_value)
         return loss
+
+    def __call__(self, points,
+                 true_points,
+                 warped_points,
+                 warped_true_points,
+                 descriptors,
+                 warped_descriptors,
+                 homographies,
+                 valid_mask):
+        return self.forward(points,
+                            true_points,
+                            warped_points,
+                            warped_true_points,
+                            descriptors,
+                            warped_descriptors,
+                            homographies,
+                            valid_mask)

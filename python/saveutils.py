@@ -38,9 +38,9 @@ def load_checkpoint(path, model, optimizer):
     return -1
 
 
-def save_checkpoint(epoch, model, optimizer, path):
+def save_checkpoint(name, epoch, model, optimizer, path):
     Path(path).mkdir(parents=True, exist_ok=True)
-    filename = os.path.join(path, 'magic_point_{0}.pt'.format(epoch))
+    filename = os.path.join(path, f'{name}_{epoch}.pt')
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),

@@ -35,8 +35,8 @@ def preprocess_coco_folder(coco_path, folder, net_wrapper, transforms, config):
         img = torchvision.io.image.read_image(str(image_path), mode=torchvision.io.image.ImageReadMode.GRAY)
         img = transforms(img)
         img = img.float().div(255)
-        prob_map = net_wrapper.run_with_homography_adaptation(img, config)
+        points = net_wrapper.run_with_homography_adaptation(img, config)
 
         filename = Path(image_path).stem
         filename = Path(output_path, f'{filename}.npz')
-        np.savez_compressed(filename, image=img.numpy(), prob_map=prob_map)
+        np.savez_compressed(filename, image=img.numpy(), points=points)
