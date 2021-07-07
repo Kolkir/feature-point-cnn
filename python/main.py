@@ -41,8 +41,11 @@ def main():
     train_parser = subparsers.add_parser('train')
     train_parser.add_argument('-p', '--checkpoint_path', type=str, default='checkpoints',
                               help='Path where training checkpoints will be saved.')
+    train_parser.add_argument('-b', '--batch_size', type=int, default=32,
+                              help='Training batch size')
+
     train_group = train_parser.add_mutually_exclusive_group()
-    #train_group.required = True
+    # train_group.required = True
     train_group.add_argument('-s', '--synthetic_path', type=str,
                              help='Path to the synthetic shapes dataset.')
     train_coco_group = train_group.add_argument_group()

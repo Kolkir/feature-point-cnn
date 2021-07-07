@@ -399,7 +399,8 @@ def test_homography(image):
     points = torch.randint(0, img_min_dim, (num_points, 2))
 
     # Sample random homography transform and apply transformation
-    warped_image, warped_points, valid_mask, homography = homographic_augmentation(image, points, valid_border_margin=3)
+    homography_config = HomographyConfig()
+    warped_image, warped_points, valid_mask, homography = homographic_augmentation(image, points, homography_config)
     h_inv = invert_homography(homography)
     restored_image = homography_transform(warped_image, h_inv)
 

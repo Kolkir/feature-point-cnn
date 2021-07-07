@@ -12,11 +12,11 @@ def masked_cross_entropy(logits, targets, class_weights, mask):
     weights = torch.gather(weights, dim=0, index=targets)
     losses = losses * weights.unsqueeze(1)
     # apply mask
-    if mask:  # skip empty masks
+    if mask is not None:  # skip empty masks
         losses = losses * mask.float()
         losses_flat = losses.flatten(start_dim=1)
         loss = torch.sum(losses_flat, dim=1)
-        loss = loss / torch.count_nonzero(mask, dim=1)
+        loss = loss / torch.count_nonzero(mask.flatten(start_dim=1), dim=1)
     else:
         losses_flat = losses.flatten(start_dim=1)
         loss = torch.mean(losses_flat, dim=1)

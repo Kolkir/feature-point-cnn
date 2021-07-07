@@ -13,9 +13,10 @@ class SuperPointTrainer(BaseTrainer):
     def __init__(self, coco_dataset_path, checkpoint_path, settings):
         self.settings = settings
         self.checkpoint_path = checkpoint_path
-        self.train_dataset = CocoDataset(coco_dataset_path, settings, 'train')
+        self.train_dataset = CocoDataset(coco_dataset_path, settings, 'training')
         self.test_dataset = CocoDataset(coco_dataset_path, settings, 'test')
-        super(SuperPointTrainer, self).__init__(self.train_dataset, self.test_dataset, self.settings.batch_size)
+        super(SuperPointTrainer, self).__init__(self.settings.cuda, self.train_dataset, self.test_dataset,
+                                                self.settings.batch_size)
         self.learning_rate = self.settings.learning_rate
         self.epochs = self.settings.epochs
         self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
@@ -23,7 +24,7 @@ class SuperPointTrainer(BaseTrainer):
 
     def train(self, model):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
-        loss = GlobalLoss(self.settings.cuda)
+        loss = GlobalLoss(self.settings.cuda, lambda_loss=0.0001)
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
@@ -34,13 +35,15 @@ class SuperPointTrainer(BaseTrainer):
 
         self.train_iter = 0
 
-        def train_loss_fn(batch_index, image, point_labels, warped_image, warped_point_labels, valid_mask, homographies):
+        def train_loss_fn(batch_index, image, point_labels, warped_image, warped_point_labels, valid_mask,
+                          homographies):
             _, descriptors, point_logits = model.forward(image)
             _, warped_descriptors, warped_point_logits = model.forward(warped_image)
             # image shape [batch_dim, channels = 1, h, w]
             if self.is_cuda:
                 point_labels = point_labels.cuda()
                 warped_point_labels = warped_point_labels.cuda()
+                valid_mask = valid_mask.cuda()
 
             loss_value = loss(point_logits,
                               point_labels,
@@ -65,6 +68,7 @@ class SuperPointTrainer(BaseTrainer):
             if self.is_cuda:
                 point_labels = point_labels.cuda()
                 warped_point_labels = warped_point_labels.cuda()
+                valid_mask = valid_mask.cuda()
 
             loss_value = loss(point_logits,
                               point_labels,

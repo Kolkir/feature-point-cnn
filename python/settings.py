@@ -40,3 +40,4 @@ class SuperPointSettings:
         self.nn_thresh = opt.nn_thresh
         if  opt.run_mode == 'inference':
             self.do_quantization = opt.quantization
+        self.batch_size = opt.batch_size

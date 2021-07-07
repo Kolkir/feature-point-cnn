@@ -3,6 +3,21 @@ import torch
 from python.nms import corners_nms
 
 
+def scale_valid_map(data_map, img_h, img_w, cell_size):
+    img_h_cells = int(img_h / cell_size)
+    img_w_cells = int(img_w / cell_size)
+
+    data_map = torch.reshape(data_map, [img_h_cells, cell_size, img_w_cells, cell_size])
+    data_map = data_map.permute([0, 2, 1, 3])
+    data_map = torch.reshape(data_map, [img_h_cells, img_w_cells, cell_size * cell_size])
+    data_map = data_map.permute([2, 0, 1])
+
+    data_map = torch.sum(data_map, dim=0)
+    data_map = torch.where(data_map > 0., 1., 0.)
+
+    return data_map.unsqueeze(dim=0)
+
+
 def make_points_labels(points, img_h, img_w, cell_size):
     points_map = np.zeros((img_h, img_w))
     ys = points[:, 0].astype(int)
@@ -18,7 +33,7 @@ def make_points_labels(points, img_h, img_w, cell_size):
     # add a dustbin, and assign the second level score to be bigger than noise
     pad = ((0, 0), (0, 0), (0, 1))
     points_map = np.pad(points_map, pad_width=pad, mode='constant', constant_values=1)
-    points_map = points_map.transpose(2, 0, 1)
+    points_map = points_map.transpose([2, 0, 1])
 
     # Convert to labels - indices 0 - 65
     # Add a small random matrix to randomly break ties in argmax - if the 8x8 region has several corners
