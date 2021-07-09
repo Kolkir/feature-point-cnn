@@ -1,5 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 
 class BaseTrainer(object):
@@ -12,7 +13,7 @@ class BaseTrainer(object):
 
     def train_loop(self, loss_fn, optimizer):
         train_loss = 0
-        for batch_index, batch in enumerate(self.train_dataloader):
+        for batch_index, batch in enumerate(tqdm(self.train_dataloader)):
             loss = loss_fn(batch_index, *batch)
             train_loss += loss.item()
 
@@ -20,12 +21,12 @@ class BaseTrainer(object):
             loss.backward()
             optimizer.step()
         train_loss /= len(self.train_dataloader)
-        print(f"Test Avg loss: {train_loss:>8f} \n")
+        print(f"Train Avg loss: {train_loss:>8f} \n")
 
     def test_loop(self, loss_fn):
         test_loss = 0
         with torch.no_grad():
-            for batch_index, batch in enumerate(self.test_dataloader):
+            for batch_index, batch in enumerate(tqdm(self.test_dataloader)):
                 test_loss += loss_fn(batch_index, *batch).item()
 
         test_loss /= len(self.test_dataloader)

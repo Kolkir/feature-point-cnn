@@ -17,7 +17,7 @@ class SuperPointSettings:
                              (128, 128)]
 
         self.detector_dims = (128, 256, 65)
-        self.descriptor_dims = (128, 256, 256)
+        self.descriptor_dims = (128, 256, 256)  # original value for last layer was 256
 
         self.do_quantization = False
         self.cuda = False

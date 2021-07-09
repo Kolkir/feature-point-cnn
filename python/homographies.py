@@ -26,9 +26,6 @@ import torch
 from scipy.stats import truncnorm
 from torchvision.transforms import functional_tensor
 from kornia.morphology import erosion
-import torchvision
-import numpy as np
-import sys
 import cv2
 
 
@@ -189,7 +186,7 @@ def sample_homography(
     p_mat.unsqueeze_(dim=1)
     x, _ = torch.solve(p_mat, a_mat)
     homography = x.t()
-    return homography
+    return homography.squeeze(dim=0)
 
 
 def invert_homography(h):
@@ -204,7 +201,7 @@ def flat2mat(h):
     Converts a flattened homography transformation with shape `[1, 8]` to its
     corresponding homography matrix with shape `[1, 3, 3]`.
     """
-    return torch.reshape(torch.cat([h, torch.ones([h.shape[0], 1])], dim=1), [-1, 3, 3])
+    return torch.reshape(torch.cat([h, torch.ones([h.shape[0], 1], device=h.device)], dim=1), [-1, 3, 3])
 
 
 def mat2flat(h):
@@ -271,6 +268,7 @@ def homography_adaptation(image, net, config):
                               perspective_amplitude_y=config.perspective_amplitude_y, patch_ratio=config.patch_ratio,
                               max_angle=config.max_angle,
                               allow_artifacts=config.allow_artifacts, translation_overflow=config.translation_overflow)
+        H.unsqueeze_(dim=0)
         H_inv = invert_homography(H)
         warped = homography_transform(image, H)
         count = homography_transform(torch.ones(shape, device=image.device).unsqueeze(0),
@@ -357,23 +355,21 @@ def warp_points(points, homography):
     Returns: a Tensor of shape (N, 2) or (B, N, 2) (depending on whether the homography
             is batched) containing the new coordinates of the warped points.
     """
-    H = homography.unsqueeze(dim=0) if len(homography.shape) == 1 else homography
+    h = homography.unsqueeze(dim=0) if len(homography.shape) == 1 else homography
 
     # Get the points to the homogeneous format
     num_points = points.shape[0]
     points = points.to(dtype=torch.float32)
-    # points = torch.flip(points, dims=(1,))  # flip x and y coordinates
-    points = torch.cat([points, torch.ones([num_points, 1], dtype=torch.float32)], dim=-1)
+    points = torch.cat([points, torch.ones([num_points, 1], dtype=torch.float32, device=points.device)], dim=-1)
 
     # Apply the homography
-    H_inv = flat2mat(invert_homography(H))
-    H_inv = H_inv.permute(2, 1, 0)
-    warped_points = torch.tensordot(points, H_inv, [[1], [0]])
+    h_inv = flat2mat(invert_homography(h))
+    h_inv = h_inv.permute(2, 1, 0)
+    warped_points = torch.tensordot(points, h_inv, [[1], [0]])
     warped_points = warped_points[:, :2, :] / warped_points[:, 2:, :]
-    # warped_points = torch.flip(warped_points, dims=(1,))  # flip x and y coordinates
     warped_points = warped_points.squeeze_(2)
 
-    return warped_points[0] if len(homography.shape) == 1 else warped_points
+    return warped_points
 
 
 def filter_points(points, shape):
@@ -384,45 +380,3 @@ def filter_points(points, shape):
     mask = (points >= 0) & (points <= shape_tensor)
     mask = torch.prod(mask, dim=-1, dtype=torch.bool)
     return points[mask]
-
-
-def draw_points(image, points, color):
-    for point in points:
-        point_int = (int(round(point[0])), int(round(point[1])))
-        cv2.circle(image, point_int, 5, color, -1, lineType=16)
-
-
-def test_homography(image):
-    # Generate random feature points
-    img_min_dim = min(image.shape[1], image.shape[2])
-    num_points = 20
-    points = torch.randint(0, img_min_dim, (num_points, 2))
-
-    # Sample random homography transform and apply transformation
-    homography_config = HomographyConfig()
-    warped_image, warped_points, valid_mask, homography = homographic_augmentation(image, points, homography_config)
-    h_inv = invert_homography(homography)
-    restored_image = homography_transform(warped_image, h_inv)
-
-    # Draw result
-    original_img = cv2.UMat(image.permute(1, 2, 0).numpy())
-    warped_img = cv2.UMat(warped_image.permute(1, 2, 0).numpy())
-    restored_img = restored_image.permute(1, 2, 0).numpy()
-    mask_img = valid_mask.permute(1, 2, 0).numpy().astype(np.uint8)
-    mask_img = mask_img * 255
-
-    draw_points(original_img, points.numpy(), color=(0, 255, 0))
-    draw_points(warped_img, warped_points.numpy(), color=(0, 0, 255))
-
-    cv2.imshow("Original image", original_img)
-    cv2.imshow("Warped image", warped_img)
-    cv2.imshow("Restored image", restored_img)
-    cv2.imshow("Mask", mask_img)
-
-    key = cv2.waitKey(delay=0)
-
-
-if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        img = torchvision.io.image.read_image(sys.argv[1])
-        test_homography(img)

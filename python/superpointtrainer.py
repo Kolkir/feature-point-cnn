@@ -24,7 +24,7 @@ class SuperPointTrainer(BaseTrainer):
 
     def train(self, model):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
-        loss = GlobalLoss(self.settings.cuda, lambda_loss=0.0001)
+        loss = GlobalLoss(self.settings.cuda, lambda_loss=0.0001, cell_size=self.settings.cell)
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
@@ -44,6 +44,7 @@ class SuperPointTrainer(BaseTrainer):
                 point_labels = point_labels.cuda()
                 warped_point_labels = warped_point_labels.cuda()
                 valid_mask = valid_mask.cuda()
+                homographies = homographies.cuda()
 
             loss_value = loss(point_logits,
                               point_labels,
@@ -69,6 +70,7 @@ class SuperPointTrainer(BaseTrainer):
                 point_labels = point_labels.cuda()
                 warped_point_labels = warped_point_labels.cuda()
                 valid_mask = valid_mask.cuda()
+                homographies = homographies.cuda()
 
             loss_value = loss(point_logits,
                               point_labels,

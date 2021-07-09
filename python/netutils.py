@@ -46,14 +46,14 @@ def make_points_labels(points, img_h, img_w, cell_size):
 def get_points_coordinates(prob_map, img_h, img_w, cell_size, confidence_thresh):
     prob_map = prob_map.data.cpu().numpy()
     # threshold confidence level
-    xs, ys = np.where(prob_map >= confidence_thresh)
-    confidence = prob_map[xs, ys]
-    return xs, ys, confidence
+    bs, ys, xs = np.where(prob_map >= confidence_thresh)
+    confidence = prob_map[bs, ys, xs]
+    return ys, xs, confidence
 
 
 def restore_prob_map(prob_map, img_h, img_w, cell_size):
     softmax_result = torch.exp(prob_map)
-    softmax_result = softmax_result / (torch.sum(softmax_result, dim=0) + .00001)
+    softmax_result = softmax_result / (torch.sum(softmax_result, dim=1) + .00001)
     # removing dustbin dimension
     no_dustbin = softmax_result[:, :-1, :, :]
     # reshape to get full resolution
@@ -68,15 +68,15 @@ def restore_prob_map(prob_map, img_h, img_w, cell_size):
 
 
 def get_points(prob_map, img_h, img_w, settings):
-    xs, ys, confidence = get_points_coordinates(prob_map, img_h, img_w, settings.cell, settings.confidence_thresh)
+    ys, xs, confidence = get_points_coordinates(prob_map, img_h, img_w, settings.cell, settings.confidence_thresh)
     # if we didn't find any features
     if len(xs) == 0:
         return np.zeros((3, 0))
 
     # get points coordinates
     points = np.zeros((3, len(xs)))
-    points[0, :] = ys
-    points[1, :] = xs
+    points[0, :] = xs
+    points[1, :] = ys
     points[2, :] = confidence
     # NMS
     points = corners_nms(points, img_h, img_w, dist_thresh=settings.nms_dist)
