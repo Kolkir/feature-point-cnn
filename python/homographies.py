@@ -69,6 +69,8 @@ def truncated_normal(shape, mean=0.0, stddev=1.0, dtype=torch.float32):
 def random_uniform(shape, low, high):
     if low > high:
         low, high = high, low
+    if low == high:
+        high = low + 0.00001
     return torch.distributions.uniform.Uniform(low, high).sample(shape)
 
 
@@ -219,8 +221,8 @@ def homography_transform(t, h_coeffs, interpolation='bilinear'):
 
 def homographic_augmentation(image, points, config):
     # Sample random homography transform
-    img_h = image.shape[1]
-    img_w = image.shape[2]
+    img_h = image.shape[2]
+    img_w = image.shape[3]
     image_shape = [img_h, img_w]
     homography = sample_homography(image_shape, config)
     #  Apply transformation

@@ -160,6 +160,7 @@ class GlobalLoss(object):
 
         loss = (detector_loss_value + warped_detector_loss_value
                 + self.lambda_loss * descriptor_loss_value)
+
         return loss
 
     def __call__(self, points,

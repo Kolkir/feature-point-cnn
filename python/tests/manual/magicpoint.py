@@ -2,6 +2,7 @@ import configparser
 import torch
 import cv2
 import torchvision
+from pytorch_memlab import MemReporter
 
 from python.homographies import HomographyConfig, homography_adaptation
 from python.netutils import get_points
@@ -17,6 +18,8 @@ def draw_points(image, points, color):
 
 
 def test_magic_point():
+    reporter = MemReporter()
+
     homo_config = HomographyConfig()
     config = configparser.ConfigParser()
     config.read('../test.ini')
@@ -49,6 +52,8 @@ def test_magic_point():
 
     cv2.imshow("Image", original_img)
     key = cv2.waitKey(delay=0)
+
+    reporter.report(verbose=True)
 
 
 if __name__ == '__main__':

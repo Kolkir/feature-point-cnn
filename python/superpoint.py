@@ -56,9 +56,15 @@ class SuperPoint(nn.Module):
 
     def disable_descriptor(self):
         self.is_descriptor_enabled = False
+        params = self.descriptor_conv.parameters(recurse=True)
+        for param in params:
+            param.requires_grad = False
 
     def enable_descriptor(self):
         self.is_descriptor_enabled = True
+        params = self.descriptor_conv.parameters(recurse=True)
+        for param in params:
+            param.requires_grad = True
 
     def detector_parameters(self):
         encoder_params = list(self.encoder_conv.parameters(recurse=True))
@@ -95,7 +101,10 @@ class SuperPoint(nn.Module):
         dn = norm(desc, p=2, dim=1)
         desc = desc.div(unsqueeze(dn, 1))  # normalize
 
-        prob_map = restore_prob_map(prob, img_h, img_w, self.settings.cell)
+        softmax_result = torch.exp(prob)
+        softmax_result = softmax_result / (torch.sum(softmax_result, dim=1, keepdim=True) + .00001)
+
+        prob_map = restore_prob_map(softmax_result, img_h, img_w, self.settings.cell)
         return prob_map, desc, prob
 
     def descriptor_forward_pass(self, point, x):

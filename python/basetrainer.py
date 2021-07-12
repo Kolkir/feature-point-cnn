@@ -27,7 +27,7 @@ class BaseTrainer(object):
         test_loss = 0
         with torch.no_grad():
             for batch_index, batch in enumerate(tqdm(self.test_dataloader)):
-                test_loss += loss_fn(batch_index, *batch).item()
+                test_loss += loss_fn(*batch).item()
 
         test_loss /= len(self.test_dataloader)
         print(f"Test Avg loss: {test_loss:>8f} \n")

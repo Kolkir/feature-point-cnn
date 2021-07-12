@@ -1,6 +1,6 @@
 class SuperPointSettings:
     def __init__(self):
-        self.do_quantization = False # Makes sense for CPU inference
+        self.do_quantization = False  # Makes sense for CPU inference
         self.encoder_kernel_size = (3, 3)
         self.encoder_stride = (1, 1)
         self.encoder_padding = (1, 1)
@@ -17,7 +17,7 @@ class SuperPointSettings:
                              (128, 128)]
 
         self.detector_dims = (128, 256, 65)
-        self.descriptor_dims = (128, 256, 256)  # original value for last layer was 256
+        self.descriptor_dims = (128, 256, 128)  # original value for last layer was 256
 
         self.do_quantization = False
         self.cuda = False
@@ -38,6 +38,7 @@ class SuperPointSettings:
         self.nms_dist = opt.nms_dist
         self.confidence_thresh = opt.conf_thresh
         self.nn_thresh = opt.nn_thresh
-        if  opt.run_mode == 'inference':
+        if opt.run_mode == 'inference':
             self.do_quantization = opt.quantization
-        self.batch_size = opt.batch_size
+        else:
+            self.batch_size = opt.batch_size

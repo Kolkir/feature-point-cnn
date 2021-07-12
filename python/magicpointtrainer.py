@@ -89,7 +89,7 @@ class MagicPointTrainer(BaseTrainer):
         self.summary_writer.add_scalar('F1/test', self.f1, n_iter)
         img_h = self.last_image.shape[2]
         img_w = self.last_image.shape[3]
-        points = get_points(self.last_prob_map[0, :, :], img_h, img_w, self.settings)
+        points = get_points(self.last_prob_map[0, :, :].unsqueeze(dim=0), img_h, img_w, self.settings)
         frame = self.last_image[0, 0, :, :].cpu().numpy()
         res_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
         for point in points.T:

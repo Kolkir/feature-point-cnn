@@ -1,6 +1,7 @@
 import argparse
 
 from preprocess_coco import preprocess_coco
+from python.homographies import HomographyConfig
 from settings import SuperPointSettings
 from inferencewrapper import InferenceWrapper
 from trainwrapper import TrainWrapper
@@ -79,7 +80,7 @@ def main():
             print('Start SuperPoint training...')
             train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path,
                                      settings=settings)
-            train_net.train_super_point(opt.coco_path)
+            train_net.train_super_point(opt.coco_path, opt.magic_point_weights)
             print('SuperPoint training finished')
     else:
         print('Invalid run mode')
@@ -93,13 +94,21 @@ def run_inference(opt, settings):
     win_name = 'SuperPoint features'
     cv2.namedWindow(win_name)
     prev_frame_time = 0
+    homo_config = HomographyConfig()
     while True:
         frame, ret = camera.get_frame()
         if ret:
-            points, descriptors = net.run(frame)
+            #points = net.run_with_homography_adaptation(frame, homo_config)
+
+            points, descriptors, _ = net.run(frame)
+            points = points.T
+            descriptors = descriptors.T
+            points = np.hstack((points, descriptors))
+
+            points = points[points[:, 2].argsort()[::-1]]  # sort by increasing the confidence level
 
             res_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
-            for point in points.T:
+            for point in points[0:20, :]:
                 point_int = (int(round(point[0])), int(round(point[1])))
                 cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
 

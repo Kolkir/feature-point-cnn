@@ -18,6 +18,16 @@ def scale_valid_map(data_map, img_h, img_w, cell_size):
     return data_map.unsqueeze(dim=0)
 
 
+def make_prob_map_from_labels(labels, img_h, img_w, cell_size):
+    prob_map = np.zeros((labels.shape[0], labels.shape[1], 65))
+    indices = np.argwhere(labels < 64)
+    depth_indices = labels[indices[0][:], indices[1][:]]
+    prob_map[indices[0][:], indices[1][:], depth_indices] = 1
+    prob_map = prob_map.transpose([2, 0, 1])
+    prob_map = restore_prob_map(torch.from_numpy(prob_map).unsqueeze(dim=0), img_h, img_w, cell_size)
+    return prob_map
+
+
 def make_points_labels(points, img_h, img_w, cell_size):
     points_map = np.zeros((img_h, img_w))
     ys = points[:, 0].astype(int)
@@ -52,10 +62,8 @@ def get_points_coordinates(prob_map, img_h, img_w, cell_size, confidence_thresh)
 
 
 def restore_prob_map(prob_map, img_h, img_w, cell_size):
-    softmax_result = torch.exp(prob_map)
-    softmax_result = softmax_result / (torch.sum(softmax_result, dim=1) + .00001)
     # removing dustbin dimension
-    no_dustbin = softmax_result[:, :-1, :, :]
+    no_dustbin = prob_map[:, :-1, :, :]
     # reshape to get full resolution
     img_h_cells = int(img_h / cell_size)
     img_w_cells = int(img_w / cell_size)

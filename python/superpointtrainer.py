@@ -6,12 +6,13 @@ from torch.utils.tensorboard import SummaryWriter
 from basetrainer import BaseTrainer
 from coco_dataset import CocoDataset
 from python.losses import GlobalLoss
-from saveutils import load_checkpoint, save_checkpoint
+from saveutils import load_checkpoint, save_checkpoint, load_last_checkpoint, load_checkpoint_for_inference
 
 
 class SuperPointTrainer(BaseTrainer):
-    def __init__(self, coco_dataset_path, checkpoint_path, settings):
+    def __init__(self, coco_dataset_path, checkpoint_path, magic_point_weights, settings):
         self.settings = settings
+        self.magic_point_weights = magic_point_weights
         self.checkpoint_path = checkpoint_path
         self.train_dataset = CocoDataset(coco_dataset_path, settings, 'training')
         self.test_dataset = CocoDataset(coco_dataset_path, settings, 'test')
@@ -26,9 +27,12 @@ class SuperPointTrainer(BaseTrainer):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
         loss = GlobalLoss(self.settings.cuda, lambda_loss=0.0001, cell_size=self.settings.cell)
 
+        # preload the MagicPoint state
+        load_checkpoint_for_inference(self.magic_point_weights, model)
+
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
-        prev_epoch = load_checkpoint(self.checkpoint_path, model, optimizer)
+        prev_epoch = load_last_checkpoint(self.checkpoint_path, model, optimizer)
         if prev_epoch > 0:
             start_epoch = prev_epoch + 1
         epochs_num = start_epoch + self.epochs
@@ -39,6 +43,7 @@ class SuperPointTrainer(BaseTrainer):
                           homographies):
             _, descriptors, point_logits = model.forward(image)
             _, warped_descriptors, warped_point_logits = model.forward(warped_image)
+
             # image shape [batch_dim, channels = 1, h, w]
             if self.is_cuda:
                 point_labels = point_labels.cuda()

@@ -57,13 +57,9 @@ class InferenceWrapper(object):
           desc - 256xN numpy array of corresponding unit normalized descriptors.
           """
         input_tensor = self.prepare_input(img)
-        img_h, img_w = img.shape[1], img.shape[2]
+        img_h, img_w = input_tensor.shape[2], input_tensor.shape[3]
 
         point_prob_map, descriptors_map, logits = self.net.forward(input_tensor)
-
-        if len(point_prob_map.shape) > 2:
-            point_prob_map.squeeze_(0)
-            logits.squeeze_(0)
 
         points = get_points(point_prob_map, img_h, img_w, self.settings)
         descriptors = get_descriptors(points, descriptors_map, img_h, img_w, self.settings)
@@ -78,12 +74,9 @@ class InferenceWrapper(object):
           corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
           """
         input_tensor = self.prepare_input(img)
-        img_h, img_w = img.shape[1], img.shape[2]
+        img_h, img_w = input_tensor.shape[2], input_tensor.shape[3]
 
         prob_map = homography_adaptation(input_tensor, self.net, config)
-
-        if len(prob_map.shape) > 2:
-            prob_map.squeeze_(0)
 
         points = get_points(prob_map, img_h, img_w, self.settings)
 
@@ -99,8 +92,8 @@ class InferenceWrapper(object):
             input_tensor = torch.from_numpy(input_tensor)
         else:
             input_tensor = img
-            img_h, img_w = img.shape[1], img.shape[2]
-        input_tensor = torch.autograd.Variable(input_tensor).view(1, 1, img_h, img_w)
+            img_h, img_w = img.shape[2], img.shape[3]
+        input_tensor = input_tensor.view(1, 1, img_h, img_w)
         if self.settings.cuda:
             input_tensor = input_tensor.cuda()
         return input_tensor

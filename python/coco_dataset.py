@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import numpy as np
 
-from homographies import homographic_augmentation, HomographyConfig
+from python.homographies import homographic_augmentation, HomographyConfig
 from python.netutils import make_points_labels, scale_valid_map
 
 
@@ -16,7 +16,6 @@ class CocoDataset(Dataset):
         self.data_path = os.path.join(path, dataset_type)
 
         files = list(Path(self.data_path).glob('*.*'))
-        files.sort()
         self.items = [str(file_path) for file_path in files]
         np.random.RandomState(seed).shuffle(self.items)
         self.homography_config = HomographyConfig()
@@ -39,8 +38,8 @@ class CocoDataset(Dataset):
         point_labels = make_points_labels(points.numpy(), img_h, img_w, self.settings.cell)
         warped_point_labels = make_points_labels(warped_points.numpy(), img_h, img_w, self.settings.cell)
         valid_mask = scale_valid_map(valid_mask, img_h, img_w, self.settings.cell)
-
-        return image, torch.from_numpy(point_labels), warped_image, torch.from_numpy(
+        
+        return image.squeeze(dim=0), torch.from_numpy(point_labels), warped_image.squeeze(dim=0), torch.from_numpy(
             warped_point_labels), valid_mask, homography
 
     def __len__(self):

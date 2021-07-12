@@ -35,6 +35,7 @@ def preprocess_coco_folder(coco_path, folder, net_wrapper, transforms, config):
         img = torchvision.io.image.read_image(str(image_path), mode=torchvision.io.image.ImageReadMode.GRAY)
         img = transforms(img)
         img = img.float().div(255)
+        img.unsqueeze_(dim=0)  # batch dim
         points = net_wrapper.run_with_homography_adaptation(img, config)
 
         filename = Path(image_path).stem

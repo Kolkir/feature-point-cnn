@@ -16,25 +16,28 @@ def load_checkpoint_for_inference(filename, model, load_legacy=False):
                 print('Can not load network some keys are missing:')
                 print(miss_keys)
                 exit(-1)
-
-            model.eval()
             return True
     return False
 
 
-def load_checkpoint(path, model, optimizer):
+def load_last_checkpoint(path, model, optimizer):
     if os.path.exists(path):
-        files = list(Path(path).glob('magic_point_*.pt'))
+        files = list(Path(path).glob('*.pt'))
         if len(files) > 0:
             files.sort(reverse=True)
             filename = files[0]
-            checkpoint = torch.load(filename)
-            if checkpoint:
-                model.load_state_dict(checkpoint['model_state_dict'])
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                epoch = checkpoint['epoch']
-                model.train()
-                return epoch
+            return load_checkpoint(filename, model, optimizer)
+    return -1
+
+
+def load_checkpoint(filename, model, optimizer):
+    if os.path.exists(filename):
+        checkpoint = torch.load(filename)
+        if checkpoint:
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            epoch = checkpoint['epoch']
+            return epoch
     return -1
 
 
