@@ -10,8 +10,6 @@ from python.netutils import make_points_labels, scale_valid_map
 
 class CocoDataset(Dataset):
     def __init__(self, path, settings, dataset_type, seed=0):
-        if dataset_type != 'training' and dataset_type != 'test':
-            raise Exception('Incorrect COCO dataset type')
         self.settings = settings
         self.data_path = os.path.join(path, dataset_type)
 

@@ -49,38 +49,40 @@ class InferenceWrapper(object):
             torchsummary.summary(self.net, (1, 240, 320), device='cuda' if settings.cuda else 'cpu')
 
     def run(self, img, do_homography_adaptation=False):
-        """ Process a image to extract points and descriptors.
-        Input
-          img - HxW float32 input image in range [0,1].
-        Output
-          corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
-          desc - 256xN numpy array of corresponding unit normalized descriptors.
-          """
-        input_tensor = self.prepare_input(img)
-        img_h, img_w = input_tensor.shape[2], input_tensor.shape[3]
+        with torch.no_grad():
+            """ Process a image to extract points and descriptors.
+            Input
+              img - HxW float32 input image in range [0,1].
+            Output
+              corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
+              desc - 256xN numpy array of corresponding unit normalized descriptors.
+              """
+            input_tensor = self.prepare_input(img)
+            img_h, img_w = input_tensor.shape[2], input_tensor.shape[3]
 
-        point_prob_map, descriptors_map, logits = self.net.forward(input_tensor)
+            point_prob_map, descriptors_map, logits = self.net.forward(input_tensor)
 
-        points = get_points(point_prob_map, img_h, img_w, self.settings)
-        descriptors = get_descriptors(points, descriptors_map, img_h, img_w, self.settings)
+            points = get_points(point_prob_map, img_h, img_w, self.settings)
+            descriptors = get_descriptors(points, descriptors_map, img_h, img_w, self.settings)
 
-        return points, descriptors, logits
+            return points, descriptors, logits
 
     def run_with_homography_adaptation(self, img, config):
-        """ Process a image to extract points and descriptors.
-        Input
-          img - HxW float32 input image in range [0,1].
-        Output
-          corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
-          """
-        input_tensor = self.prepare_input(img)
-        img_h, img_w = input_tensor.shape[2], input_tensor.shape[3]
+        with torch.no_grad():
+            """ Process a image to extract points and descriptors.
+            Input
+              img - HxW float32 input image in range [0,1].
+            Output
+              corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
+              """
+            input_tensor = self.prepare_input(img)
+            img_h, img_w = input_tensor.shape[2], input_tensor.shape[3]
 
-        prob_map = homography_adaptation(input_tensor, self.net, config)
+            prob_map = homography_adaptation(input_tensor, self.net, config)
 
-        points = get_points(prob_map, img_h, img_w, self.settings)
+            points = get_points(prob_map, img_h, img_w, self.settings)
 
-        return points
+            return points
 
     def prepare_input(self, img):
         if not torch.is_tensor(img):

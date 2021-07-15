@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 from basetrainer import BaseTrainer
 from coco_dataset import CocoDataset
 from python.losses import GlobalLoss
-from saveutils import load_checkpoint, save_checkpoint, load_last_checkpoint, load_checkpoint_for_inference
+from saveutils import save_checkpoint, load_last_checkpoint, load_checkpoint_for_inference
 
 
 class SuperPointTrainer(BaseTrainer):
@@ -14,8 +14,8 @@ class SuperPointTrainer(BaseTrainer):
         self.settings = settings
         self.magic_point_weights = magic_point_weights
         self.checkpoint_path = checkpoint_path
-        self.train_dataset = CocoDataset(coco_dataset_path, settings, 'training')
-        self.test_dataset = CocoDataset(coco_dataset_path, settings, 'test')
+        self.train_dataset = CocoDataset(coco_dataset_path, settings, 'train')
+        self.test_dataset = CocoDataset(coco_dataset_path, settings, 'train')  # TODO: change to 'test'
         super(SuperPointTrainer, self).__init__(self.settings.cuda, self.train_dataset, self.test_dataset,
                                                 self.settings.batch_size)
         self.learning_rate = self.settings.learning_rate
@@ -27,14 +27,15 @@ class SuperPointTrainer(BaseTrainer):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
         loss = GlobalLoss(self.settings.cuda, lambda_loss=0.0001, cell_size=self.settings.cell)
 
-        # preload the MagicPoint state
-        load_checkpoint_for_inference(self.magic_point_weights, model)
-
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
         prev_epoch = load_last_checkpoint(self.checkpoint_path, model, optimizer)
         if prev_epoch > 0:
             start_epoch = prev_epoch + 1
+        else:
+            # preload the MagicPoint state
+            load_checkpoint_for_inference(self.magic_point_weights, model)
+            model.initialize_descriptor()
         epochs_num = start_epoch + self.epochs
 
         self.train_iter = 0
@@ -60,12 +61,22 @@ class SuperPointTrainer(BaseTrainer):
                               homographies,
                               valid_mask)
 
+            return loss_value
+
+        def after_back_fn(loss_value, batch_index):
             if batch_index % 100 == 0:
                 print(f"loss: {loss_value.item():>7f}")
                 self.summary_writer.add_scalar('Loss/train', loss_value.item(), self.train_iter)
                 self.train_iter += 1
 
-            return loss_value
+                for name, param in model.named_parameters():
+                    if param.requires_grad and '_bn' not in name:
+                        self.summary_writer.add_histogram(
+                            tag=f"params/{name}", values=param, global_step=self.train_iter
+                        )
+                        self.summary_writer.add_histogram(
+                            tag=f"grads/{name}", values=param.grad, global_step=self.train_iter
+                        )
 
         def test_loss_fn(image, point_labels, warped_image, warped_point_labels, valid_mask, homographies):
             _, descriptors, point_logits = model.forward(image)
@@ -89,6 +100,6 @@ class SuperPointTrainer(BaseTrainer):
 
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch + 1}\n-------------------------------")
-            self.train_loop(train_loss_fn, optimizer)
+            self.train_loop(train_loss_fn, after_back_fn, optimizer)
             self.test_loop(test_loss_fn)
             save_checkpoint('super_point', epoch, model, optimizer, self.checkpoint_path)

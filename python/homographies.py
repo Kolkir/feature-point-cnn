@@ -31,7 +31,7 @@ import cv2
 
 class HomographyConfig(object):
     def __init__(self):
-        self.num = 10
+        self.num = 100
         self.perspective = True
         self.scaling = True
         self.rotation = True
@@ -262,44 +262,45 @@ def homography_adaptation(image, net, config):
     shape = image.shape[2:4]
 
     def step(i, probs, counts, images):
-        # Sample image patch
-        H = sample_homography(shape, perspective=config.perspective, scaling=config.scaling, rotation=config.rotation,
-                              translation=config.translation, n_scales=config.n_scales, n_angles=config.n_angles,
-                              scaling_amplitude=config.scaling_amplitude,
-                              perspective_amplitude_x=config.perspective_amplitude_x,
-                              perspective_amplitude_y=config.perspective_amplitude_y, patch_ratio=config.patch_ratio,
-                              max_angle=config.max_angle,
-                              allow_artifacts=config.allow_artifacts, translation_overflow=config.translation_overflow)
-        H.unsqueeze_(dim=0)
-        H_inv = invert_homography(H)
-        warped = homography_transform(image, H)
-        count = homography_transform(torch.ones(shape, device=image.device).unsqueeze(0),
-                                     H_inv, interpolation='nearest')
-        mask = homography_transform(torch.ones(shape, device=image.device).unsqueeze(0),
-                                    H, interpolation='nearest')
-        # Ignore the detections too close to the border to avoid artifacts
-        if config.valid_border_margin != 0:
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (config.valid_border_margin * 2,) * 2)
-            kernel = torch.from_numpy(kernel)
-            kernel = kernel.to(dtype=torch.int32, device=image.device)
-            # image should be WxCxHxW
-            count.unsqueeze_(dim=0)
-            count = erosion(count, kernel)
-            count.squeeze_(dim=0)  # remove batch dim
-            mask.unsqueeze_(dim=0)
-            mask = erosion(mask, kernel)
-            mask.squeeze_(dim=0)  # remove batch dim
+        with torch.no_grad():
+            # Sample image patch
+            H = sample_homography(shape, perspective=config.perspective, scaling=config.scaling, rotation=config.rotation,
+                                  translation=config.translation, n_scales=config.n_scales, n_angles=config.n_angles,
+                                  scaling_amplitude=config.scaling_amplitude,
+                                  perspective_amplitude_x=config.perspective_amplitude_x,
+                                  perspective_amplitude_y=config.perspective_amplitude_y, patch_ratio=config.patch_ratio,
+                                  max_angle=config.max_angle,
+                                  allow_artifacts=config.allow_artifacts, translation_overflow=config.translation_overflow)
+            H.unsqueeze_(dim=0)
+            H_inv = invert_homography(H)
+            warped = homography_transform(image, H)
+            count = homography_transform(torch.ones(shape, device=image.device).unsqueeze(0),
+                                         H_inv, interpolation='nearest')
+            mask = homography_transform(torch.ones(shape, device=image.device).unsqueeze(0),
+                                        H, interpolation='nearest')
+            # Ignore the detections too close to the border to avoid artifacts
+            if config.valid_border_margin != 0:
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (config.valid_border_margin * 2,) * 2)
+                kernel = torch.from_numpy(kernel)
+                kernel = kernel.to(dtype=torch.int32, device=image.device)
+                # image should be WxCxHxW
+                count.unsqueeze_(dim=0)
+                count = erosion(count, kernel)
+                count.squeeze_(dim=0)  # remove batch dim
+                mask.unsqueeze_(dim=0)
+                mask = erosion(mask, kernel)
+                mask.squeeze_(dim=0)  # remove batch dim
 
-        # Predict detection probabilities
-        warped_prob, _, _ = net(warped)
-        warped_prob = warped_prob * mask
-        warped_prob_proj = homography_transform(warped_prob, H_inv)
-        warped_prob_proj = warped_prob_proj * count
+            # Predict detection probabilities
+            warped_prob, _, _ = net(warped)
+            warped_prob = warped_prob * mask
+            warped_prob_proj = homography_transform(warped_prob, H_inv)
+            warped_prob_proj = warped_prob_proj * count
 
-        probs = torch.cat([probs, warped_prob_proj.unsqueeze(dim=-1)], dim=-1)
-        counts = torch.cat([counts, count.unsqueeze(dim=-1)], dim=-1)
-        images = torch.cat([images, warped.unsqueeze(dim=-1)], axis=-1)
-        return probs, counts, images
+            probs = torch.cat([probs, warped_prob_proj.unsqueeze(dim=-1)], dim=-1)
+            counts = torch.cat([counts, count.unsqueeze(dim=-1)], dim=-1)
+            images = torch.cat([images, warped.unsqueeze(dim=-1)], axis=-1)
+            return probs, counts, images
 
     for i in range(config.num):
         all_probs, all_counts, all_images = step(i, all_probs, all_counts, all_images)
@@ -362,6 +363,7 @@ def warp_points(points, homography):
     # Get the points to the homogeneous format
     num_points = points.shape[0]
     points = points.to(dtype=torch.float32)
+    points[:, [0, 1]] = points[:, [1, 0]]
     points = torch.cat([points, torch.ones([num_points, 1], dtype=torch.float32, device=points.device)], dim=-1)
 
     # Apply the homography
@@ -369,7 +371,9 @@ def warp_points(points, homography):
     h_inv = h_inv.permute(2, 1, 0)
     warped_points = torch.tensordot(points, h_inv, [[1], [0]])
     warped_points = warped_points[:, :2, :] / warped_points[:, 2:, :]
+
     warped_points = warped_points.squeeze_(2)
+    warped_points[:, [0, 1]] = warped_points[:, [1, 0]]
 
     return warped_points
 
@@ -380,5 +384,5 @@ def filter_points(points, shape):
     """
     shape_tensor = torch.tensor(shape, dtype=torch.float) - 1
     mask = (points >= 0) & (points <= shape_tensor)
-    mask = torch.prod(mask, dim=-1, dtype=torch.bool)
+    mask = torch.prod(mask, dim=1, dtype=torch.bool)
     return points[mask]

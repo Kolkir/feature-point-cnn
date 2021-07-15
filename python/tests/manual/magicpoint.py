@@ -26,6 +26,7 @@ def test_magic_point():
     settings = SuperPointSettings()
     settings.cuda = True
     net = SuperPoint(settings)
+    net.eval()
     load_checkpoint_for_inference(config['DEFAULT']['weights_path'], net)
 
     image = torchvision.io.read_image(config['DEFAULT']['image_path'], torchvision.io.image.ImageReadMode.GRAY)
@@ -47,10 +48,14 @@ def test_magic_point():
     # Draw result
     original_img = image.squeeze(dim=0).permute(1, 2, 0).data.cpu()
     original_img = cv2.UMat(original_img.numpy())
+    original_img_with_adaptation = image.squeeze(dim=0).permute(1, 2, 0).data.cpu()
+    original_img_with_adaptation = cv2.UMat(original_img_with_adaptation.numpy())
+
     draw_points(original_img, points, color=(0, 255, 0))
-    draw_points(original_img, points_with_adaptation, color=(255, 255, 255))
+    draw_points(original_img_with_adaptation, points_with_adaptation, color=(255, 255, 255))
 
     cv2.imshow("Image", original_img)
+    cv2.imshow("Adaptation", original_img_with_adaptation)
     key = cv2.waitKey(delay=0)
 
     reporter.report(verbose=True)

@@ -8,7 +8,7 @@ import cv2
 
 def main():
     config = {
-        'split_sizes': {'training': 10000, 'validation': 200, 'test': 500},
+        'split_sizes': {'training': 25000, 'validation': 200, 'test': 500},
         'image_size': [960, 1280],
         'generate_background': {
             'min_kernel_size': 150, 'max_kernel_size': 500,

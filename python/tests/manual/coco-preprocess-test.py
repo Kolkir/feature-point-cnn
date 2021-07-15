@@ -1,3 +1,5 @@
+import sys
+
 import cv2
 import numpy as np
 import torch
@@ -15,25 +17,30 @@ def draw_points(image, points, color):
 
 def test_coco_preporcess(coco_path):
     settings = SuperPointSettings()
-    dataset = CocoDataset(coco_path, settings, 'training')
+    dataset = CocoDataset(coco_path, settings, 'train2014_output')
     for item in dataset:
         image, point_labels, warped_image, warped_point_labels, valid_mask, homography = item
 
-        img_h, img_w = image.shape[1:]
-        prob_map = make_prob_map_from_labels(point_labels, img_h, img_w, settings.cell)
-        points = get_points(prob_map, img_h, img_w, settings)
-        points = points.T
-
-        # Draw result
-        original_img = image.permute(1, 2, 0).data.cpu()
-        original_img = cv2.UMat(original_img.numpy())
-        draw_points(original_img, points, color=(0, 255, 0))
-
-        cv2.imshow("Image", original_img)
+        show_data('Original', image, point_labels, (0, 255, 0), settings)
+        show_data('Warped', warped_image, warped_point_labels, (255, 255, 255), settings)
         key = cv2.waitKey(delay=0)
         if key == ord('q'):
             break
 
 
+def show_data(name, image, point_labels, color, settings):
+    img_h, img_w = image.shape[1:]
+    prob_map = make_prob_map_from_labels(point_labels.numpy(), img_h, img_w, settings.cell)
+    points = get_points(prob_map, img_h, img_w, settings)
+    points = points.T
+    # Draw result
+    original_img = image.permute(1, 2, 0).data.cpu()
+    original_img = cv2.UMat(original_img.numpy())
+    draw_points(original_img, points, color=color)
+    cv2.imshow(name, original_img)
+
+
 if __name__ == '__main__':
-    test_coco_preporcess('/mnt/a539f258-872a-4d38-966c-8cc04a2c3c9f/data_sets/coco')
+    if len(sys.argv) > 1:
+        path = sys.argv[1]
+        test_coco_preporcess(path)

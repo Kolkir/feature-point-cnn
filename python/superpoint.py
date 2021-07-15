@@ -7,17 +7,21 @@ from python.netutils import restore_prob_map
 def create_encoder_block(in_channels: int, out_channels: int, settings):
     conv_a = nn.Conv2d(in_channels, out_channels, settings.encoder_kernel_size, settings.encoder_stride,
                        settings.encoder_padding)
+    batch_norm_a = nn.BatchNorm2d(out_channels)
     conv_b = nn.Conv2d(out_channels, out_channels, settings.encoder_kernel_size, settings.encoder_stride,
                        settings.encoder_padding)
-    return conv_a, conv_b
+    batch_norm_b = nn.BatchNorm2d(out_channels)
+    return conv_a, batch_norm_a, conv_b, batch_norm_b
 
 
 def create_detdesc_block(in_channels: int, out_channels: int, res_channels: int, settings):
     conv_a = nn.Conv2d(in_channels, out_channels, settings.detdesc_kernel_size_a, settings.detdesc_stride,
                        settings.detdesc_padding_a)
+    batch_norm_a = nn.BatchNorm2d(out_channels)
     conv_b = nn.Conv2d(out_channels, res_channels, settings.detdesc_kernel_size_b, settings.detdesc_stride,
                        settings.detdesc_padding_b)
-    return conv_a, conv_b
+    batch_norm_b = nn.BatchNorm2d(res_channels)
+    return conv_a, batch_norm_a, conv_b, batch_norm_b
 
 
 class SuperPoint(nn.Module):
@@ -36,21 +40,25 @@ class SuperPoint(nn.Module):
         # Create encoder
         self.encoder_conv = nn.ModuleDict()
         for i, dim in enumerate(self.settings.encoder_dims):
-            conv_a, conv_b = create_encoder_block(*dim, self.settings)
+            conv_a, bn_a, conv_b, bn_b = create_encoder_block(*dim, self.settings)
             self.encoder_conv['encoder_conv{0}_a'.format(i)] = conv_a
+            self.encoder_conv['encoder_bn{0}_a'.format(i)] = bn_a
             self.encoder_conv['encoder_relu{0}_a'.format(i)] = nn.ReLU(inplace=True)
             self.encoder_conv['encoder_conv{0}_b'.format(i)] = conv_b
+            self.encoder_conv['encoder_bn{0}_b'.format(i)] = bn_b
             self.encoder_conv['encoder_relu{0}_b'.format(i)] = nn.ReLU(inplace=True)
 
         # Create detector hea
         self.detector_conv = nn.ModuleDict()
-        self.detector_conv['detector_conv_a'], self.detector_conv['detector_conv_b'] = create_detdesc_block(
+        self.detector_conv['detector_conv_a'], self.detector_conv['detector_bn_a'], self.detector_conv[
+            'detector_conv_b'], self.detector_conv['detector_bn_b'] = create_detdesc_block(
             *self.settings.detector_dims, self.settings)
         self.detector_conv['detector_relu'] = nn.ReLU(inplace=True)
 
         # Create descriptor head
         self.descriptor_conv = nn.ModuleDict()
-        self.descriptor_conv['descriptor_conv_a'], self.descriptor_conv['descriptor_conv_b'] = create_detdesc_block(
+        self.descriptor_conv['descriptor_conv_a'], self.descriptor_conv['descriptor_bn_a'], self.descriptor_conv[
+            'descriptor_conv_b'], self.descriptor_conv['descriptor_bn_b'] = create_detdesc_block(
             *self.settings.descriptor_dims, self.settings)
         self.descriptor_conv['descriptor_relu'] = nn.ReLU(inplace=True)
 
@@ -66,10 +74,10 @@ class SuperPoint(nn.Module):
         for param in params:
             param.requires_grad = True
 
-    def detector_parameters(self):
-        encoder_params = list(self.encoder_conv.parameters(recurse=True))
-        detector_params = list(self.detector_conv.parameters(recurse=True))
-        return encoder_params + detector_params
+    def initialize_descriptor(self):
+        for layer in self.descriptor_conv.children():
+            if hasattr(layer, 'reset_parameters'):
+                layer.reset_parameters()
 
     def forward(self, image):
         """ Forward pass
@@ -90,6 +98,7 @@ class SuperPoint(nn.Module):
 
         if self.settings.do_quantization:
             image = self.quant(image)
+
         image = self.encoder_forward_pass(image)
         prob = self.detdesc_forward_pass(image, self.detector_conv, 'detector')
         desc = self.descriptor_forward_pass(prob, image)
@@ -119,17 +128,27 @@ class SuperPoint(nn.Module):
 
     def detdesc_forward_pass(self, x, head, prefix):
         relu = head[prefix + '_relu']
-        res_a = relu(head[prefix + '_conv_a'](x))
-        out = head[prefix + '_conv_b'](res_a)
-        return out
+
+        x = head[prefix + '_conv_a'](x)
+        x = head[prefix + '_bn_a'](x)
+        x = relu(x)
+
+        x = head[prefix + '_conv_b'](x)
+        x = head[prefix + '_bn_b'](x)
+        return x
 
     def encoder_forward_pass(self, x):
         last_step = len(self.settings.encoder_dims) - 1
         for i, dim in enumerate(self.settings.encoder_dims):
-            relu_a = self.encoder_conv['encoder_relu{0}_a'.format(i)]
-            x = relu_a(self.encoder_conv['encoder_conv{0}_a'.format(i)](x))
-            relu_b = self.encoder_conv['encoder_relu{0}_b'.format(i)]
-            x = relu_b(self.encoder_conv['encoder_conv{0}_b'.format(i)](x))
+
+            x = self.encoder_conv['encoder_conv{0}_a'.format(i)](x)
+            x = self.encoder_conv['encoder_bn{0}_a'.format(i)](x)
+            x = self.encoder_conv['encoder_relu{0}_a'.format(i)](x)
+
+            x = self.encoder_conv['encoder_conv{0}_b'.format(i)](x)
+            x = self.encoder_conv['encoder_bn{0}_b'.format(i)](x)
+            x = self.encoder_conv['encoder_relu{0}_b'.format(i)](x)
+
             if i != last_step:
                 x = self.pool(x)
         return x

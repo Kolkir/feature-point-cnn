@@ -10,7 +10,7 @@ from basetrainer import BaseTrainer
 from netutils import get_points
 from losses import DetectorLoss
 from synthetic_dataset import SyntheticDataset
-from saveutils import load_checkpoint, save_checkpoint
+from saveutils import save_checkpoint, load_last_checkpoint
 
 
 class MagicPointTrainer(BaseTrainer):
@@ -35,7 +35,7 @@ class MagicPointTrainer(BaseTrainer):
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
-        prev_epoch = load_checkpoint(self.checkpoint_path, model, optimizer)
+        prev_epoch = load_last_checkpoint(self.checkpoint_path, model, optimizer)
         if prev_epoch > 0:
             start_epoch = prev_epoch + 1
         epochs_num = start_epoch + self.epochs
@@ -49,12 +49,22 @@ class MagicPointTrainer(BaseTrainer):
                 true_points = true_points.cuda()
             loss_value = loss(point_logits, true_points, None)
 
+            return loss_value
+
+        def after_back_fn(loss_value, batch_index):
             if batch_index % 100 == 0:
                 print(f"loss: {loss_value.item():>7f}")
                 self.summary_writer.add_scalar('Loss/train', loss_value.item(), self.train_iter)
-                self.train_iter += 1
 
-            return loss_value
+                for name, param in model.named_parameters():
+                    if param.requires_grad and '_bn' not in name:
+                        self.summary_writer.add_histogram(
+                            tag=f"params/{name}", values=param, global_step=self.train_iter
+                        )
+                        self.summary_writer.add_histogram(
+                            tag=f"grads/{name}", values=param.grad, global_step=self.train_iter
+                        )
+                self.train_iter += 1
 
         softmax = torch.nn.Softmax(dim=1)
         f1_metric = torchmetrics.F1(num_classes=65, mdmc_average='samplewise')
@@ -72,7 +82,7 @@ class MagicPointTrainer(BaseTrainer):
 
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch + 1}\n-------------------------------")
-            self.train_loop(train_loss_fn, optimizer)
+            self.train_loop(train_loss_fn, after_back_fn, optimizer)
 
             self.f1 = 0
             self.last_image = None

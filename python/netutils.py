@@ -21,8 +21,8 @@ def scale_valid_map(data_map, img_h, img_w, cell_size):
 def make_prob_map_from_labels(labels, img_h, img_w, cell_size):
     prob_map = np.zeros((labels.shape[0], labels.shape[1], 65))
     indices = np.argwhere(labels < 64)
-    depth_indices = labels[indices[0][:], indices[1][:]]
-    prob_map[indices[0][:], indices[1][:], depth_indices] = 1
+    depth_indices = labels[indices[:, 0], indices[:, 1]]
+    prob_map[indices[:, 0], indices[:, 1], depth_indices] = 1
     prob_map = prob_map.transpose([2, 0, 1])
     prob_map = restore_prob_map(torch.from_numpy(prob_map).unsqueeze(dim=0), img_h, img_w, cell_size)
     return prob_map

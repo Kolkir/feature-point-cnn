@@ -68,6 +68,7 @@ def main():
     elif opt.run_mode == "train":
         if opt.synthetic_path:
             print('Start MagicPoint training...')
+            settings.epochs = 1  # Train only one time to make net see each image only once
             train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path,
                                      settings=settings)
             train_net.train_magic_point(opt.synthetic_path)
@@ -95,10 +96,11 @@ def run_inference(opt, settings):
     cv2.namedWindow(win_name)
     prev_frame_time = 0
     homo_config = HomographyConfig()
+
     while True:
         frame, ret = camera.get_frame()
         if ret:
-            #points = net.run_with_homography_adaptation(frame, homo_config)
+            # points = net.run_with_homography_adaptation(frame, homo_config)
 
             points, descriptors, _ = net.run(frame)
             points = points.T
@@ -113,11 +115,12 @@ def run_inference(opt, settings):
                 cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
 
             # draw FPS
-            new_frame_time = time.time()
-            fps = 1 / (new_frame_time - prev_frame_time)
+            new_frame_time = time.perf_counter()
+            time_diff = new_frame_time - prev_frame_time
             prev_frame_time = new_frame_time
-            fps = 'FPS: ' + str(int(fps))
-            cv2.putText(res_img, fps, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (200, 200, 200), 2, cv2.LINE_AA)
+            fps = 1. / time_diff
+            fps_str = 'FPS: ' + str(int(fps))
+            cv2.putText(res_img, fps_str, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (200, 200, 200), 2, cv2.LINE_AA)
 
             cv2.imshow(win_name, res_img)
             key = cv2.waitKey(delay=1)

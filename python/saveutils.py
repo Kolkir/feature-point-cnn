@@ -16,6 +16,7 @@ def load_checkpoint_for_inference(filename, model, load_legacy=False):
                 print('Can not load network some keys are missing:')
                 print(miss_keys)
                 exit(-1)
+            print(f'Checkpoint {filename} was successfully loaded')
             return True
     return False
 
@@ -37,6 +38,7 @@ def load_checkpoint(filename, model, optimizer):
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             epoch = checkpoint['epoch']
+            print(f'Checkpoint {filename} was successfully loaded')
             return epoch
     return -1
 
