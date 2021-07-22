@@ -12,12 +12,12 @@ from python.settings import SuperPointSettings
 def draw_points(image, points, color):
     for point in points:
         point_int = (int(round(point[0])), int(round(point[1])))
-        cv2.circle(image, point_int, 5, color, -1, lineType=16)
+        cv2.circle(image, point_int, 3, color, -1, lineType=16)
 
 
 def test_coco_preporcess(coco_path):
     settings = SuperPointSettings()
-    dataset = CocoDataset(coco_path, settings, 'train2014_output')
+    dataset = CocoDataset(coco_path, settings, 'train')
     for item in dataset:
         image, point_labels, warped_image, warped_point_labels, valid_mask, homography = item
 

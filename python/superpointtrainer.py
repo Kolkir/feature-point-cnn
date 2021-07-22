@@ -18,6 +18,7 @@ class SuperPointTrainer(BaseTrainer):
         self.test_dataset = CocoDataset(coco_dataset_path, settings, 'train')  # TODO: change to 'test'
         super(SuperPointTrainer, self).__init__(self.settings.cuda, self.train_dataset, self.test_dataset,
                                                 self.settings.batch_size)
+        print(f'Trainer is initialized with batch size = {self.settings.batch_size}')
         self.learning_rate = self.settings.learning_rate
         self.epochs = self.settings.epochs
         self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
@@ -25,7 +26,7 @@ class SuperPointTrainer(BaseTrainer):
 
     def train(self, model):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
-        loss = GlobalLoss(self.settings.cuda, lambda_loss=0.0001, cell_size=self.settings.cell)
+        loss = GlobalLoss(self.settings.cuda, lambda_loss=0.0001, settings=self.settings)
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
@@ -42,6 +43,12 @@ class SuperPointTrainer(BaseTrainer):
 
         def train_loss_fn(batch_index, image, point_labels, warped_image, warped_point_labels, valid_mask,
                           homographies):
+            # This does not zero the memory of each individual parameter,
+            # also the subsequent backward pass uses assignment instead of addition to store gradients,
+            # this reduces the number of memory operations -compared to optimizer.zero_grad()
+            for param in model.parameters():
+                param.grad = None
+                
             _, descriptors, point_logits = model.forward(image)
             _, warped_descriptors, warped_point_logits = model.forward(warped_image)
 
@@ -69,14 +76,15 @@ class SuperPointTrainer(BaseTrainer):
                 self.summary_writer.add_scalar('Loss/train', loss_value.item(), self.train_iter)
                 self.train_iter += 1
 
-                for name, param in model.named_parameters():
-                    if param.requires_grad and '_bn' not in name:
-                        self.summary_writer.add_histogram(
-                            tag=f"params/{name}", values=param, global_step=self.train_iter
-                        )
-                        self.summary_writer.add_histogram(
-                            tag=f"grads/{name}", values=param.grad, global_step=self.train_iter
-                        )
+                if not model.grad_checkpointing:
+                    for name, param in model.named_parameters():
+                        if param.requires_grad and '_bn' not in name:
+                            self.summary_writer.add_histogram(
+                                tag=f"params/{name}", values=param, global_step=self.train_iter
+                            )
+                            self.summary_writer.add_histogram(
+                                tag=f"grads/{name}", values=param.grad, global_step=self.train_iter
+                            )
 
         def test_loss_fn(image, point_labels, warped_image, warped_point_labels, valid_mask, homographies):
             _, descriptors, point_logits = model.forward(image)
@@ -101,5 +109,6 @@ class SuperPointTrainer(BaseTrainer):
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch + 1}\n-------------------------------")
             self.train_loop(train_loss_fn, after_back_fn, optimizer)
-            self.test_loop(test_loss_fn)
+            # TODO: restore
+            # self.test_loop(test_loss_fn)
             save_checkpoint('super_point', epoch, model, optimizer, self.checkpoint_path)

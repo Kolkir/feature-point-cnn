@@ -44,6 +44,8 @@ def main():
                               help='Path where training checkpoints will be saved.')
     train_parser.add_argument('-b', '--batch_size', type=int, default=32,
                               help='Training batch size')
+    train_parser.add_argument('--magic_point',  action='store_true',
+                              help='Restrict training to MagicPoint only')
 
     train_group = train_parser.add_mutually_exclusive_group()
     # train_group.required = True
@@ -68,7 +70,6 @@ def main():
     elif opt.run_mode == "train":
         if opt.synthetic_path:
             print('Start MagicPoint training...')
-            settings.epochs = 1  # Train only one time to make net see each image only once
             train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path,
                                      settings=settings)
             train_net.train_magic_point(opt.synthetic_path)
@@ -77,11 +78,17 @@ def main():
             print('Pre-processing COCO dataset...')
             preprocess_coco(opt.coco_path, opt.magic_point_weights, settings)
             print('Pre-processing finished')
-        elif opt.coco_path:
+        elif opt.coco_path and not opt.magic_point:
             print('Start SuperPoint training...')
             train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path,
                                      settings=settings)
             train_net.train_super_point(opt.coco_path, opt.magic_point_weights)
+            print('SuperPoint training finished')
+        elif opt.coco_path and opt.magic_point:
+            print('Start MagicPoint training with COCO...')
+            train_net = TrainWrapper(checkpoint_path=opt.checkpoint_path,
+                                     settings=settings)
+            train_net.train_magic_point(opt.coco_path, use_coco=True)
             print('SuperPoint training finished')
     else:
         print('Invalid run mode')

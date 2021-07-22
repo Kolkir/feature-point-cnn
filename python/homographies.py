@@ -298,6 +298,7 @@ def homography_adaptation(image, net, config):
             warped_prob_proj = warped_prob_proj * count
 
             probs = torch.cat([probs, warped_prob_proj.unsqueeze(dim=-1)], dim=-1)
+            count = count.repeat([image.shape[0], 1, 1])
             counts = torch.cat([counts, count.unsqueeze(dim=-1)], dim=-1)
             images = torch.cat([images, warped.unsqueeze(dim=-1)], axis=-1)
             return probs, counts, images

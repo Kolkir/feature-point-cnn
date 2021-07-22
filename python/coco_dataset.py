@@ -19,7 +19,13 @@ class CocoDataset(Dataset):
         self.homography_config = HomographyConfig()
 
     def __getitem__(self, index):
-        item_data = np.load(self.items[index])
+        file_name = self.items[index]
+        try:
+            item_data = np.load(file_name)
+        except Exception as e:
+            print(f'CocoDataset failed to load file {file_name}')
+            raise
+
         image = torch.from_numpy(item_data['image'])
         points = torch.from_numpy(item_data['points'])
 
@@ -29,7 +35,7 @@ class CocoDataset(Dataset):
         # swap x and y columns
         points[:, [0, 1]] = points[:, [1, 0]]
 
-        warped_image, warped_points, valid_mask, homography = homographic_augmentation(image, points,
+        warped_image, warped_points, valid_mask, homography = homographic_augmentation(image.unsqueeze(0), points,
                                                                                        self.homography_config)
 
         img_h, img_w = image.shape[-2:]
@@ -37,7 +43,7 @@ class CocoDataset(Dataset):
         warped_point_labels = make_points_labels(warped_points.numpy(), img_h, img_w, self.settings.cell)
         valid_mask = scale_valid_map(valid_mask, img_h, img_w, self.settings.cell)
         
-        return image.squeeze(dim=0), torch.from_numpy(point_labels), warped_image.squeeze(dim=0), torch.from_numpy(
+        return image, torch.from_numpy(point_labels), warped_image.squeeze(dim=0), torch.from_numpy(
             warped_point_labels), valid_mask, homography
 
     def __len__(self):

@@ -13,9 +13,9 @@ class TrainWrapper(object):
             print('Model moved to GPU')
         self.net.train()
 
-    def train_magic_point(self, synthetic_dataset_path):
+    def train_magic_point(self, synthetic_dataset_path, use_coco=False):
         self.net.disable_descriptor()
-        magic_point_trainer = MagicPointTrainer(synthetic_dataset_path, self.checkpoint_path, self.settings)
+        magic_point_trainer = MagicPointTrainer(synthetic_dataset_path, self.checkpoint_path, self.settings, use_coco)
         magic_point_trainer.train(self.net)
 
     def train_super_point(self, coco_dataset_path, magic_point_weights):

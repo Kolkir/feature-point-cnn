@@ -31,7 +31,7 @@ class SuperPointSettings:
         self.train_image_size = (240, 320)
         self.batch_size = 32
         self.learning_rate = 0.001
-        self.epochs = 5
+        self.epochs = 100
 
     def read_options(self, opt):
         self.cuda = opt.cuda

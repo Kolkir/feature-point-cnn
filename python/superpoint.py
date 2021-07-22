@@ -1,25 +1,29 @@
+from collections import OrderedDict
+
 import torch
 from torch import nn, norm, unsqueeze, quantization
-
+from torch.utils.checkpoint import checkpoint as grad_checkpoint
 from python.netutils import restore_prob_map
 
 
 def create_encoder_block(in_channels: int, out_channels: int, settings):
+    # bias=False - because conv followed by BatchNorm
     conv_a = nn.Conv2d(in_channels, out_channels, settings.encoder_kernel_size, settings.encoder_stride,
-                       settings.encoder_padding)
+                       settings.encoder_padding, bias=False)
     batch_norm_a = nn.BatchNorm2d(out_channels)
     conv_b = nn.Conv2d(out_channels, out_channels, settings.encoder_kernel_size, settings.encoder_stride,
-                       settings.encoder_padding)
+                       settings.encoder_padding, bias=False)
     batch_norm_b = nn.BatchNorm2d(out_channels)
     return conv_a, batch_norm_a, conv_b, batch_norm_b
 
 
 def create_detdesc_block(in_channels: int, out_channels: int, res_channels: int, settings):
+    # bias=False - because conv followed by BatchNorm
     conv_a = nn.Conv2d(in_channels, out_channels, settings.detdesc_kernel_size_a, settings.detdesc_stride,
-                       settings.detdesc_padding_a)
+                       settings.detdesc_padding_a, bias=False)
     batch_norm_a = nn.BatchNorm2d(out_channels)
     conv_b = nn.Conv2d(out_channels, res_channels, settings.detdesc_kernel_size_b, settings.detdesc_stride,
-                       settings.detdesc_padding_b)
+                       settings.detdesc_padding_b, bias=False)
     batch_norm_b = nn.BatchNorm2d(res_channels)
     return conv_a, batch_norm_a, conv_b, batch_norm_b
 
@@ -29,26 +33,37 @@ class SuperPoint(nn.Module):
         super(SuperPoint, self).__init__()
         self.settings = settings
         self.is_descriptor_enabled = True  # used to disable descriptor head when training MagicPoint
+        self.grad_checkpointing = False
 
         if self.settings.do_quantization:
             self.quant = quantization.QuantStub()
             self.dequant = quantization.DeQuantStub()
 
-        # self.relu = nn.ReLU(inplace=True)
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-
         # Create encoder
-        self.encoder_conv = nn.ModuleDict()
-        for i, dim in enumerate(self.settings.encoder_dims):
-            conv_a, bn_a, conv_b, bn_b = create_encoder_block(*dim, self.settings)
-            self.encoder_conv['encoder_conv{0}_a'.format(i)] = conv_a
-            self.encoder_conv['encoder_bn{0}_a'.format(i)] = bn_a
-            self.encoder_conv['encoder_relu{0}_a'.format(i)] = nn.ReLU(inplace=True)
-            self.encoder_conv['encoder_conv{0}_b'.format(i)] = conv_b
-            self.encoder_conv['encoder_bn{0}_b'.format(i)] = bn_b
-            self.encoder_conv['encoder_relu{0}_b'.format(i)] = nn.ReLU(inplace=True)
+        self.encoder_dict1 = OrderedDict()
+        self.encoder_dict2 = OrderedDict()
 
-        # Create detector hea
+        def fill_encoder_block(module_dict, index, dimensions, add_pool):
+            conv_a, bn_a, conv_b, bn_b = create_encoder_block(*dimensions, self.settings)
+            module_dict['encoder_conv{0}_a'.format(index)] = conv_a
+            module_dict['encoder_relu{0}_a'.format(index)] = nn.ReLU(inplace=True)
+            module_dict['encoder_bn{0}_a'.format(index)] = bn_a
+            module_dict['encoder_conv{0}_b'.format(index)] = conv_b
+            module_dict['encoder_relu{0}_b'.format(index)] = nn.ReLU(inplace=True)
+            module_dict['encoder_bn{0}_b'.format(index)] = bn_b
+            if add_pool:
+                module_dict['encoder_pool{0}'.format(index)] = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        fill_encoder_block(self.encoder_dict1, 0, self.settings.encoder_dims[0], add_pool=True)
+        last_step = len(self.settings.encoder_dims) - 1
+        for i, dim in enumerate(self.settings.encoder_dims):
+            if i != 0:
+                fill_encoder_block(self.encoder_dict2, i, dim, add_pool=(i != last_step))
+
+        self.encoder1 = nn.Sequential(self.encoder_dict1)
+        self.encoder2 = nn.Sequential(self.encoder_dict2)
+
+        # Create detector head
         self.detector_conv = nn.ModuleDict()
         self.detector_conv['detector_conv_a'], self.detector_conv['detector_bn_a'], self.detector_conv[
             'detector_conv_b'], self.detector_conv['detector_bn_b'] = create_detdesc_block(
@@ -100,8 +115,12 @@ class SuperPoint(nn.Module):
             image = self.quant(image)
 
         image = self.encoder_forward_pass(image)
-        prob = self.detdesc_forward_pass(image, self.detector_conv, 'detector')
-        desc = self.descriptor_forward_pass(prob, image)
+        if self.grad_checkpointing:
+            prob = grad_checkpoint(self.detector_forward_pass, image)
+            desc = grad_checkpoint(self.descriptor_forward_pass, prob, image)
+        else:
+            prob = self.detdesc_forward_pass(image, self.detector_conv, 'detector')
+            desc = self.descriptor_forward_pass(prob, image)
 
         if self.settings.do_quantization:
             prob = self.dequant(prob)
@@ -116,39 +135,33 @@ class SuperPoint(nn.Module):
         prob_map = restore_prob_map(softmax_result, img_h, img_w, self.settings.cell)
         return prob_map, desc, prob
 
-    def descriptor_forward_pass(self, point, x):
+    def detector_forward_pass(self, image):
+        prob = self.detdesc_forward_pass(image, self.detector_conv, 'detector')
+        return prob
+
+    def descriptor_forward_pass(self, prob, x):
         if self.is_descriptor_enabled:
             desc = self.detdesc_forward_pass(x, self.descriptor_conv, 'descriptor')
         else:
-            shape = point.shape
+            shape = prob.shape
             desc = torch.zeros((shape[0], 256, shape[2], shape[3]))
             if self.settings.cuda:
                 desc = desc.cuda()
         return desc
 
     def detdesc_forward_pass(self, x, head, prefix):
-        relu = head[prefix + '_relu']
-
         x = head[prefix + '_conv_a'](x)
+        x = head[prefix + '_relu'](x)
         x = head[prefix + '_bn_a'](x)
-        x = relu(x)
 
         x = head[prefix + '_conv_b'](x)
         x = head[prefix + '_bn_b'](x)
         return x
 
     def encoder_forward_pass(self, x):
-        last_step = len(self.settings.encoder_dims) - 1
-        for i, dim in enumerate(self.settings.encoder_dims):
-
-            x = self.encoder_conv['encoder_conv{0}_a'.format(i)](x)
-            x = self.encoder_conv['encoder_bn{0}_a'.format(i)](x)
-            x = self.encoder_conv['encoder_relu{0}_a'.format(i)](x)
-
-            x = self.encoder_conv['encoder_conv{0}_b'.format(i)](x)
-            x = self.encoder_conv['encoder_bn{0}_b'.format(i)](x)
-            x = self.encoder_conv['encoder_relu{0}_b'.format(i)](x)
-
-            if i != last_step:
-                x = self.pool(x)
+        x = self.encoder1(x)
+        if self.grad_checkpointing:
+            x = grad_checkpoint(self.encoder2, x)
+        else:
+            x = self.encoder2(x)
         return x

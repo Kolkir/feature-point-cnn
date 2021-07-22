@@ -71,18 +71,23 @@ class InferenceWrapper(object):
         with torch.no_grad():
             """ Process a image to extract points and descriptors.
             Input
-              img - HxW float32 input image in range [0,1].
+              img - NxCxHxW float32 input image in range [0,1].
             Output
-              corners - 3xN numpy array with corners [x_i, y_i, confidence_i]^T.
+              corners - Nx3xN numpy array with corners [x_i, y_i, confidence_i]^T.
               """
             input_tensor = self.prepare_input(img)
             img_h, img_w = input_tensor.shape[2], input_tensor.shape[3]
 
-            prob_map = homography_adaptation(input_tensor, self.net, config)
+            batch_prob_map = homography_adaptation(input_tensor, self.net, config)
 
-            points = get_points(prob_map, img_h, img_w, self.settings)
+            prob_maps = torch.unbind(batch_prob_map)
 
-            return points
+            points_list = []
+            for prob_map in prob_maps:
+                points = get_points(prob_map.unsqueeze(0), img_h, img_w, self.settings)
+                points_list.append(points)
+
+            return points_list
 
     def prepare_input(self, img):
         if not torch.is_tensor(img):
@@ -92,10 +97,10 @@ class InferenceWrapper(object):
             input_tensor = img.copy()
             input_tensor = input_tensor.reshape(1, img_h, img_w)
             input_tensor = torch.from_numpy(input_tensor)
+            img_h, img_w = img.shape[0], img.shape[1]
+            input_tensor = input_tensor.view(1, 1, img_h, img_w)
         else:
             input_tensor = img
-            img_h, img_w = img.shape[2], img.shape[3]
-        input_tensor = input_tensor.view(1, 1, img_h, img_w)
         if self.settings.cuda:
             input_tensor = input_tensor.cuda()
         return input_tensor

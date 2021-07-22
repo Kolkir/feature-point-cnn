@@ -18,6 +18,7 @@ def load_checkpoint_for_inference(filename, model, load_legacy=False):
                 exit(-1)
             print(f'Checkpoint {filename} was successfully loaded')
             return True
+    print(f'Failed to load checkpoint: {filename} ')
     return False
 
 
@@ -25,7 +26,15 @@ def load_last_checkpoint(path, model, optimizer):
     if os.path.exists(path):
         files = list(Path(path).glob('*.pt'))
         if len(files) > 0:
-            files.sort(reverse=True)
+            def file_number(f):
+                f = str(f.stem)
+                key = f.rsplit('_', 1)[1]
+                if key.isdigit():
+                    return int(key)
+                else:
+                    return -1
+
+            files = sorted(files, reverse=True, key=file_number)
             filename = files[0]
             return load_checkpoint(filename, model, optimizer)
     return -1
@@ -51,3 +60,4 @@ def save_checkpoint(name, epoch, model, optimizer, path):
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
     }, filename)
+    print(f'Checkpoint {filename} was successfully saved')

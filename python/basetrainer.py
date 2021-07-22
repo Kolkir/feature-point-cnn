@@ -8,16 +8,37 @@ class BaseTrainer(object):
         self.is_cuda = is_cuda
         self.train_dataset = train_dataset
         self.test_dataset = test_dataset
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
-        self.test_dataloader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=True)
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+        self.test_dataloader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+        self.use_amp = True
+        if self.use_amp:
+            self.scaler = torch.cuda.amp.GradScaler()
+        else:
+            self.scaler = None
 
     def train_loop(self, loss_fn, after_back_fn, optimizer):
         train_loss = 0
         for batch_index, batch in enumerate(tqdm(self.train_dataloader)):
-            optimizer.zero_grad()
-            loss = loss_fn(batch_index, *batch)
-            loss.backward()
-            optimizer.step()
+            # See a loss function - now it uses different approach to clear gradients
+            # optimizer.zero_grad()
+            if self.use_amp:
+                with torch.cuda.amp.autocast():
+                    loss = loss_fn(batch_index, *batch)
+
+                # Scales the loss, and calls backward()
+                # to create scaled gradients
+                self.scaler.scale(loss).backward()
+
+                # Unscales gradients and calls
+                # or skips optimizer.step()
+                self.scaler.step(optimizer)
+
+                # Updates the scale for next iteration
+                self.scaler.update()
+            else:
+                loss = loss_fn(batch_index, *batch)
+                loss.backward()
+                optimizer.step()
 
             after_back_fn(loss, batch_index)
             train_loss += loss.item()
