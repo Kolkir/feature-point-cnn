@@ -1,14 +1,9 @@
 import argparse
 
 from preprocess_coco import preprocess_coco
-from python.homographies import HomographyConfig
+from python.inference import run_inference
 from settings import SuperPointSettings
-from inferencewrapper import InferenceWrapper
 from trainwrapper import TrainWrapper
-from camera import Camera
-import numpy as np
-import cv2
-import time
 
 
 def main():
@@ -94,55 +89,6 @@ def main():
             print('SuperPoint training finished')
     else:
         print('Invalid run mode')
-
-
-def run_inference(opt, settings):
-    camera = Camera(opt.camid, opt.W, opt.H)
-    print('Loading pre-trained network...')
-    net = InferenceWrapper(weights_path=opt.weights_path, settings=settings)
-    print('Successfully loaded pre-trained network.')
-    win_name = 'SuperPoint features'
-    cv2.namedWindow(win_name)
-    prev_frame_time = 0
-    homo_config = HomographyConfig()
-
-    while True:
-        frame, ret = camera.get_frame()
-        if ret:
-            # points = net.run_with_homography_adaptation(frame, homo_config)
-
-            points, descriptors, _ = net.run(frame)
-            points = points.T
-            descriptors = descriptors.T
-            points = np.hstack((points, descriptors))
-
-            points = points[points[:, 2].argsort()[::-1]]  # sort by increasing the confidence level
-
-            res_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
-            for point in points[0:20, :]:
-                point_int = (int(round(point[0])), int(round(point[1])))
-                cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
-
-            # draw FPS
-            new_frame_time = time.perf_counter()
-            time_diff = new_frame_time - prev_frame_time
-            prev_frame_time = new_frame_time
-            fps = 1. / time_diff
-            fps_str = 'FPS: ' + str(int(fps))
-            cv2.putText(res_img, fps_str, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (200, 200, 200), 2, cv2.LINE_AA)
-
-            cv2.imshow(win_name, res_img)
-            key = cv2.waitKey(delay=1)
-            if key == ord('q'):
-                print('Quitting, \'q\' pressed.')
-                break
-            if key == ord('s'):
-                net.trace(frame, opt.out_file_name)
-                print('Model saved, \'s\' pressed.')
-        else:
-            break
-    camera.close()
-    cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
