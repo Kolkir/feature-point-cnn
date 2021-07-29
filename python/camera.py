@@ -22,6 +22,8 @@ class Camera(object):
         while True:
             if self.cap.isOpened():
                 (self.status, self.frame) = self.cap.read()
+            else:
+                break
 
     def get_frame(self):
         ret, frame = self.status, self.frame
@@ -32,9 +34,11 @@ class Camera(object):
         frame = cv2.resize(frame, (self.resize_width, self.resize_height),
                            interpolation=cv2.INTER_AREA)
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
         frame = frame.astype('float32') / 255.0
 
         return frame, True
 
     def close(self):
         self.cap.release()
+        self.thread.join()
