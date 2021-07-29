@@ -22,7 +22,6 @@
 # SOFTWARE.
 
 import torch
-import numpy as np
 from torch.nn.functional import log_softmax, normalize, relu
 from python.homographies import warp_points
 
@@ -30,23 +29,11 @@ from python.homographies import warp_points
 def masked_cross_entropy(logits, targets, mask):
     log_probabilities = log_softmax(logits, dim=1)
     losses = -torch.gather(log_probabilities, dim=1, index=targets.unsqueeze(1))
-
-    # apply mask
-    batch_size = logits.shape[0]
-    h = logits.shape[2]
-    w = logits.shape[3]
-    mask = torch.ones([batch_size, 1, h, w], dtype=torch.float32, device=logits.device) if mask is None else mask
-    losses = losses * mask.float()
-
-    # mean inside batches
-    losses_flat = losses.flatten(start_dim=1)
-    loss = torch.sum(losses_flat, dim=1)
-    sums = torch.sum(mask.flatten(start_dim=1), dim=1)
-    loss = loss / sums
-
-    # global mean across batch
-    loss = torch.mean(loss)
-    return loss
+    if mask is None:
+        loss_value = losses.mean()
+    else:
+        loss_value = torch.masked_select(losses, mask.bool()).mean()
+    return loss_value
 
 
 class DetectorLoss(object):
@@ -81,7 +68,7 @@ class GlobalLoss(object):
                 warped_descriptors,
                 homographies,
                 valid_mask):
-        # Compute the loss for the detector head
+        # Compute the losses for the detector head
         detector_loss_value = self.detector_loss.forward(points, true_points, valid_mask=None)
         warped_detector_loss_value = self.detector_loss.forward(
             warped_points, warped_true_points,
@@ -95,6 +82,7 @@ class GlobalLoss(object):
         loss = (detector_loss_value + warped_detector_loss_value
                 + self.lambda_loss * descriptor_loss_value)
 
+        # loss = detector_loss_value + warped_detector_loss_value
         return loss
 
     def __call__(self, points,
@@ -130,14 +118,14 @@ class GlobalLoss(object):
         warped_descriptors = normalize(warped_descriptors, dim=-1, p=2)
 
         # Original version
-        #dot_product_desc = torch.sum(descriptors * warped_descriptors, dim=-1)
+        dot_product_desc = torch.sum(descriptors * warped_descriptors, dim=-1)
 
         # change precision
-        orig_type = descriptors.dtype
-        descriptors = descriptors.to(dtype=torch.float16)
-        warped_descriptors = warped_descriptors.to(dtype=torch.float16)
-        dot_product_desc = torch.sum(descriptors * warped_descriptors, dim=-1)
-        dot_product_desc = dot_product_desc.to(dtype=orig_type)
+        # orig_type = descriptors.dtype
+        # descriptors = descriptors.to(dtype=torch.float16)
+        # warped_descriptors = warped_descriptors.to(dtype=torch.float16)
+        # dot_product_desc = torch.sum(descriptors * warped_descriptors, dim=-1)
+        # dot_product_desc = dot_product_desc.to(dtype=orig_type)
 
         # use CPU
         # descriptors_cpu = descriptors.cpu()
