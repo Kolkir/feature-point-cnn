@@ -44,7 +44,9 @@ def main():
                               help='Path where training checkpoints will be saved.')
     train_parser.add_argument('-b', '--batch_size', type=int, default=32,
                               help='Training batch size')
-    train_parser.add_argument('--magic_point',  action='store_true',
+    train_parser.add_argument('-d', '--batch_size_divider', type=int, default=1,
+                              help='In the case of low GPU memory divides batch size to use gradient accumulation')
+    train_parser.add_argument('--magic_point', action='store_true',
                               help='Restrict training to MagicPoint only')
 
     train_group = train_parser.add_mutually_exclusive_group()

@@ -30,6 +30,7 @@ class SuperPointSettings:
         # training params
         self.train_image_size = (240, 320)
         self.batch_size = 32
+        self.batch_size_divider = 1  # Used for gradient accumulation
         self.learning_rate = 0.001
         self.epochs = 100
 
@@ -42,3 +43,4 @@ class SuperPointSettings:
             self.do_quantization = opt.quantization
         else:
             self.batch_size = opt.batch_size
+            self.batch_size_divider = opt.batch_size_divider
