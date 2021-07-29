@@ -1,0 +1,9 @@
+torch~=1.8.1
+opencv-python~=4.5.2.52
+torchvision~=0.9.1
+numpy~=1.19.0
+tqdm~=4.61.0
+scipy~=1.7.0
+kornia~=0.5.5
+torchsummary~=1.5.1
+torchmetrics~=0.3.2
