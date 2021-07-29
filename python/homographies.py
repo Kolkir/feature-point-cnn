@@ -45,7 +45,7 @@ class HomographyConfig(object):
         self.max_angle = pi / 2
         self.allow_artifacts = False
         self.translation_overflow = 0.
-        self.valid_border_margin = 3
+        self.valid_border_margin = 8
         self.aggregation = 'sum'
 
     def init_for_preprocess(self):
