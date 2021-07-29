@@ -33,7 +33,7 @@ class SuperPoint(nn.Module):
         super(SuperPoint, self).__init__()
         self.settings = settings
         self.is_descriptor_enabled = True  # used to disable descriptor head when training MagicPoint
-        self.grad_checkpointing = False
+        self.grad_checkpointing = True
 
         if self.settings.do_quantization:
             self.quant = quantization.QuantStub()
