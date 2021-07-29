@@ -9,13 +9,15 @@ from python.netutils import make_points_labels, scale_valid_map
 
 
 class CocoDataset(Dataset):
-    def __init__(self, path, settings, dataset_type, seed=0):
+    def __init__(self, path, settings, dataset_type, seed=0, size=0):
         self.settings = settings
         self.data_path = os.path.join(path, dataset_type)
 
         files = list(Path(self.data_path).glob('*.*'))
         self.items = [str(file_path) for file_path in files]
         np.random.RandomState(seed).shuffle(self.items)
+        if size != 0:
+            self.items = self.items[:size]
         self.homography_config = HomographyConfig()
 
     def __getitem__(self, index):
