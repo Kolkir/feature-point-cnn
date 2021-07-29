@@ -21,7 +21,7 @@ class MagicPointTrainer(BaseTrainer):
         self.checkpoint_path = checkpoint_path
         if use_coco:
             self.train_dataset = CocoDataset(dataset_path, settings, 'train')
-            self.test_dataset = CocoDataset(dataset_path, settings, 'train')  # TODO: fix later
+            self.test_dataset = CocoDataset(dataset_path, settings, 'test')
         else:
             self.train_dataset = SyntheticDataset(dataset_path, settings, 'training')
             self.test_dataset = SyntheticDataset(dataset_path, settings, 'test')
@@ -49,7 +49,7 @@ class MagicPointTrainer(BaseTrainer):
 
         self.train_iter = 0
 
-        def train_loss_fn(batch_index, image, true_points, *args):
+        def train_loss_fn(image, true_points, *args):
             # This does not zero the memory of each individual parameter,
             # also the subsequent backward pass uses assignment instead of addition to store gradients,
             # this reduces the number of memory operations -compared to optimizer.zero_grad()
@@ -117,13 +117,13 @@ class MagicPointTrainer(BaseTrainer):
             print(f"Epoch {epoch}\n-------------------------------")
             self.train_loop(train_loss_fn, after_back_fn, optimizer)
 
-            # self.f1 = 0
-            # self.last_image = None
-            # self.last_prob_map = None
-            # test_loss, batches_num = self.test_loop(test_loss_fn)
-            # self.f1 /= batches_num
-            # print(f"Test Avg F1:{self.f1:7f} \n")
-            # self.test_log_fn(test_loss, epoch)
+            self.f1 = 0
+            self.last_image = None
+            self.last_prob_map = None
+            test_loss, batches_num = self.test_loop(test_loss_fn)
+            self.f1 /= batches_num
+            print(f"Test Avg F1:{self.f1:7f} \n")
+            self.test_log_fn(test_loss, epoch)
 
             save_checkpoint('magic_point', epoch, model, optimizer, self.checkpoint_path)
             scheduler.step()
