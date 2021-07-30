@@ -71,15 +71,14 @@ class MagicPointTrainer(BaseTrainer):
                 print(f"loss: {loss_value.item():>7f}")
                 self.summary_writer.add_scalar('Loss/train', loss_value.item(), self.train_iter)
 
-                if not model.grad_checkpointing:
-                    for name, param in model.named_parameters():
-                        if param.requires_grad and '_bn' not in name:
-                            self.summary_writer.add_histogram(
-                                tag=f"params/{name}", values=param, global_step=self.train_iter
-                            )
-                            self.summary_writer.add_histogram(
-                                tag=f"grads/{name}", values=param.grad, global_step=self.train_iter
-                            )
+                for name, param in model.named_parameters():
+                    if param.requires_grad and '_bn' not in name:
+                        self.summary_writer.add_histogram(
+                            tag=f"params/{name}", values=param, global_step=self.train_iter
+                        )
+                        self.summary_writer.add_histogram(
+                            tag=f"grads/{name}", values=param.grad, global_step=self.train_iter
+                        )
 
                 img_h = self.last_image.shape[2]
                 img_w = self.last_image.shape[3]

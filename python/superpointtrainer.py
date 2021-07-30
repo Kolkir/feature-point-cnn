@@ -70,7 +70,7 @@ class SuperPointTrainer(BaseTrainer):
 
     def train(self, model):
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
-        loss = GlobalLoss(self.settings.cuda, lambda_loss=0.0001, settings=self.settings)
+        loss = GlobalLoss(self.settings.cuda, lambda_loss=0.1, settings=self.settings)
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
@@ -125,18 +125,18 @@ class SuperPointTrainer(BaseTrainer):
 
         def after_back_fn(loss_value, batch_index):
             if batch_index % 100 == 0:
-                print(f"loss: {loss_value.item():>7f}")
+                print(
+                    f"loss: {loss_value.item():>7f}, detector {loss.detector_loss_value.item()}, warped detector {loss.warped_detector_loss_value.item()}, descriptor {loss.descriptor_loss_value.item()}")
                 self.summary_writer.add_scalar('Loss/train', loss_value.item(), self.train_iter)
 
-                if not model.grad_checkpointing:
-                    for name, param in model.named_parameters():
-                        if param.grad is not None and '_bn' not in name:
-                            self.summary_writer.add_histogram(
-                                tag=f"params/{name}", values=param, global_step=self.train_iter
-                            )
-                            self.summary_writer.add_histogram(
-                                tag=f"grads/{name}", values=param.grad, global_step=self.train_iter
-                            )
+                for name, param in model.named_parameters():
+                    if param.grad is not None and '_bn' not in name:
+                        self.summary_writer.add_histogram(
+                            tag=f"params/{name}", values=param, global_step=self.train_iter
+                        )
+                        self.summary_writer.add_histogram(
+                            tag=f"grads/{name}", values=param.grad, global_step=self.train_iter
+                        )
 
                 self.add_image_summary('normal', self.last_image, self.last_prob_map, self.last_labels)
                 self.add_image_summary('warped', self.last_warped_image, self.last_warped_prob_map,
