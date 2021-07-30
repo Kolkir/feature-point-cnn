@@ -71,15 +71,19 @@ class BaseTrainer(object):
 
     def test_loop(self, loss_fn):
         test_loss = 0
+        batches_num = 0
         with torch.no_grad():
             for batch_index, batch in enumerate(tqdm(self.test_dataloader)):
                 loss_value = loss_fn(*batch).item()
 
                 # normalize loss to account for batch accumulation
                 loss_value /= self.batch_size_divider
-
                 test_loss += loss_value
 
-        test_loss /= len(self.test_dataloader)
+                if ((batch_index + 1) % self.batch_size_divider == 0) or (
+                        batch_index + 1 == len(self.train_dataloader)):
+                    batches_num += 1
+
+        test_loss /= batches_num
         print(f"Test Avg loss: {test_loss:>8f} \n")
         return test_loss, len(self.test_dataloader)
