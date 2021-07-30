@@ -21,7 +21,7 @@ def run_inference(opt, settings):
 
     while True:
         frame, ret = camera.get_frame()
-        #  frame = cv2.blur(frame, (5, 5))
+        frame = cv2.blur(frame, (5, 5))
         if ret:
             new_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
             features = get_features(frame, net)
@@ -76,18 +76,19 @@ def get_correspondences(stop_features, features, dist_thresh=0.1):
 def get_best_correspondences(stop_features, features):
     correspondences = []
     indices = []
-    for i, stop_feature in enumerate(stop_features):
+    for stop_index, stop_feature in enumerate(stop_features):
         min_dist = 100.
         min_index = -1
-        for i, feature in enumerate(features):
+        for new_index, feature in enumerate(features):
             a = stop_feature[3:]
             b = feature[3:]
             dist = np.linalg.norm(a - b, ord=2)
             if dist <= min_dist:
                 min_dist = dist
-                min_index = i
-        correspondences.append(features[min_index])
-        indices.append(min_index)
+                min_index = new_index
+        if min_index >= 0:
+            correspondences.append(features[min_index])
+            indices.append(stop_index)
     return correspondences, indices
 
 
