@@ -101,6 +101,9 @@ def get_points(prob_map, img_h, img_w, settings):
 
 
 def get_descriptors(points, descriptors_map, img_h, img_w, settings):
+    # dn = norm(desc, p=2, dim=1)
+    # desc = desc.div(unsqueeze(dn, 1))
+
     if points.shape[1] == 0:
         return np.zeros((descriptors_map.shape[1], 0))
     # interpolate into descriptor map using 2D point locations

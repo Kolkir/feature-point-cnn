@@ -33,7 +33,7 @@ class SuperPoint(nn.Module):
         super(SuperPoint, self).__init__()
         self.settings = settings
         self.is_descriptor_enabled = True  # used to disable descriptor head when training MagicPoint
-        self.grad_checkpointing = True
+        self.grad_checkpointing = False
 
         if self.settings.do_quantization:
             self.quant = quantization.QuantStub()
@@ -125,9 +125,6 @@ class SuperPoint(nn.Module):
         if self.settings.do_quantization:
             prob = self.dequant(prob)
             desc = self.dequant(desc)
-
-        dn = norm(desc, p=2, dim=1)
-        desc = desc.div(unsqueeze(dn, 1))  # normalize
 
         softmax_result = torch.exp(prob)
         softmax_result = softmax_result / (torch.sum(softmax_result, dim=1, keepdim=True) + .00001)
