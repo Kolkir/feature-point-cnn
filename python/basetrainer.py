@@ -15,7 +15,7 @@ class BaseTrainer(object):
                                            num_workers=num_workers)
         self.test_dataloader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=True,
                                           num_workers=num_workers)
-        self.use_amp = True
+        self.use_amp = False
         if self.use_amp:
             self.scaler = torch.cuda.amp.GradScaler()
         else:
@@ -24,15 +24,16 @@ class BaseTrainer(object):
     def train_loop(self, loss_fn, after_back_fn, optimizer):
         train_loss = 0
         prev_batch_index = 0
+        real_batch_index = 0
         for batch_index, batch in enumerate(tqdm(self.train_dataloader)):
             # See a loss function - now it uses different approach to clear gradients
             # optimizer.zero_grad()
+            optimizer_step_done = False
             if self.use_amp:
                 with torch.cuda.amp.autocast():
                     loss = loss_fn(*batch)
-
-                # normalize loss to account for batch accumulation
-                loss = loss / self.batch_size_divider
+                    # normalize loss to account for batch accumulation
+                    loss = loss / self.batch_size_divider
 
                 # Scales the loss, and calls backward()
                 # to create scaled gradients
@@ -45,8 +46,9 @@ class BaseTrainer(object):
                     self.scaler.step(optimizer)
                     # Updates the scale for next iteration
                     self.scaler.update()
+                    optimizer_step_done = True
             else:
-                loss = loss_fn(batch_index, *batch)
+                loss = loss_fn(*batch)
                 # normalize loss to account for batch accumulation
                 loss /= self.batch_size_divider
                 loss.backward()
@@ -54,14 +56,17 @@ class BaseTrainer(object):
                 if ((batch_index + 1) % self.batch_size_divider == 0) or (
                         batch_index + 1 == len(self.train_dataloader)):
                     optimizer.step()
+                    optimizer_step_done = True
 
-            real_batch_index = (batch_index + 1) // self.batch_size_divider
-            if batch_index != 0 and real_batch_index > prev_batch_index:
-                after_back_fn(loss, real_batch_index)
-            prev_batch_index = real_batch_index
-            train_loss += loss.item()
+            # calculate statistics only after optimizer step to preserve graph
+            if optimizer_step_done:
+                if real_batch_index > prev_batch_index:
+                    after_back_fn(loss, real_batch_index)
+                prev_batch_index = real_batch_index
+                train_loss += loss.item()
+                real_batch_index += 1
 
-        train_loss /= len(self.train_dataloader)
+        train_loss /= real_batch_index
         print(f"Train Avg loss: {train_loss:>8f} \n")
 
     def test_loop(self, loss_fn):
