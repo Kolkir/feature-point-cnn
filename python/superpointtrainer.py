@@ -69,6 +69,12 @@ class SuperPointTrainer(BaseTrainer):
         self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]), self.train_iter)
 
     def train(self, model):
+        fake_input = torch.ones((1, 1, 240, 320),dtype=torch.float32)
+        if self.settings.cuda:
+            fake_input = fake_input.cuda()
+        self.summary_writer.add_graph(model, fake_input)
+        self.summary_writer.flush()
+
         optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
         loss = GlobalLoss(self.settings.cuda, lambda_loss=0.1, settings=self.settings)
 
