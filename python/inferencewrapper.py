@@ -23,30 +23,7 @@ class InferenceWrapper(object):
             print('Model moved to GPU')
 
         self.net.eval()
-
-        if settings.do_quantization:
-            # x86
-            # self.net.qconfig = torch.quantization.get_default_qconfig('fbgemm')
-
-            # If you want to deploy in ARM On
-            self.net.qconfig = torch.quantization.get_default_qconfig('qnnpack')
-
-            model_fp32_fused = torch.quantization.fuse_modules(self.net, [
-                ['encoder_conv.encoder_conv0_a', 'encoder_conv.encoder_relu0_a'],
-                ['encoder_conv.encoder_conv0_b', 'encoder_conv.encoder_relu0_b'],
-                ['encoder_conv.encoder_conv1_a', 'encoder_conv.encoder_relu1_a'],
-                ['encoder_conv.encoder_conv1_b', 'encoder_conv.encoder_relu1_b'],
-                ['encoder_conv.encoder_conv2_a', 'encoder_conv.encoder_relu2_a'],
-                ['encoder_conv.encoder_conv2_b', 'encoder_conv.encoder_relu2_b'],
-                ['encoder_conv.encoder_conv3_a', 'encoder_conv.encoder_relu3_a'],
-                ['encoder_conv.encoder_conv3_b', 'encoder_conv.encoder_relu3_b'],
-                ['descriptor_conv.descriptor_conv_a', 'descriptor_conv.descriptor_relu'],
-                ['detector_conv.detector_conv_a', 'detector_conv.detector_relu']
-                ])
-            model_fp32_prepared = torch.quantization.prepare(model_fp32_fused)
-            self.net = torch.quantization.convert(model_fp32_prepared)
-        else:
-            torchsummary.summary(self.net, (1, 240, 320), device='cuda' if settings.cuda else 'cpu')
+        # torchsummary.summary(self.net, (1, 240, 320), device='cuda' if settings.cuda else 'cpu')
 
     def run(self, img, do_homography_adaptation=False):
         with torch.no_grad():
