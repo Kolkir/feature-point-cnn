@@ -75,7 +75,9 @@ class SuperPointTrainer(BaseTrainer):
         self.summary_writer.add_graph(model, fake_input)
         self.summary_writer.flush()
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
+        # optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adadelta(model.parameters())
+
         loss = GlobalLoss(self.settings.cuda, lambda_loss=0.1, settings=self.settings)
 
         # continue training starting from the latest epoch checkpoint
@@ -136,7 +138,7 @@ class SuperPointTrainer(BaseTrainer):
                 self.summary_writer.add_scalar('Loss/train', loss_value.item(), self.train_iter)
 
                 for name, param in model.named_parameters():
-                    if param.grad is not None and '_bn' not in name:
+                    if param.grad is not None and 'bn' not in name:
                         self.summary_writer.add_histogram(
                             tag=f"params/{name}", values=param, global_step=self.train_iter
                         )
@@ -179,7 +181,6 @@ class SuperPointTrainer(BaseTrainer):
 
             return loss_value
 
-        scheduler = ExponentialLR(optimizer, gamma=0.9)
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch + 1}\n-------------------------------")
             self.train_loop(train_loss_fn, after_back_fn, optimizer)
@@ -194,4 +195,3 @@ class SuperPointTrainer(BaseTrainer):
             self.summary_writer.add_scalar('F1/test', self.f1, epoch)
 
             save_checkpoint('super_point', epoch, model, optimizer, self.checkpoint_path)
-            scheduler.step()
