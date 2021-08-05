@@ -45,7 +45,8 @@ def load_checkpoint(filename, model, optimizer):
         checkpoint = torch.load(filename)
         if checkpoint:
             model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if optimizer is not None:
+                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             epoch = checkpoint['epoch']
             print(f'Checkpoint {filename} was successfully loaded')
             return epoch
