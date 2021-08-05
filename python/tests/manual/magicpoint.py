@@ -2,7 +2,7 @@ import configparser
 import torch
 import cv2
 import torchvision
-from pytorch_memlab import MemReporter
+import torchvision.transforms.functional as F
 
 from python.homographies import HomographyConfig, homography_adaptation
 from python.netutils import get_points
@@ -14,12 +14,10 @@ from python.superpoint import SuperPoint
 def draw_points(image, points, color):
     for point in points:
         point_int = (int(round(point[0])), int(round(point[1])))
-        cv2.circle(image, point_int, 5, color, -1, lineType=16)
+        cv2.circle(image, point_int, 2, color, -1, lineType=16)
 
 
 def test_magic_point():
-    reporter = MemReporter()
-
     homo_config = HomographyConfig()
     config = configparser.ConfigParser()
     config.read('../test.ini')
@@ -31,6 +29,16 @@ def test_magic_point():
 
     image = torchvision.io.read_image(config['DEFAULT']['image_path'], torchvision.io.image.ImageReadMode.GRAY)
     image = image.to(dtype=torch.float32) / 255.
+
+    # ratio preserving resize
+    _, img_h, img_w = image.shape
+    scale_h = 240 / img_h
+    scale_w = 320 / img_w
+    scale_max = max(scale_h, scale_w)
+    new_size = [int(img_h * scale_max), int(img_w * scale_max)]
+    image = F.resize(image, new_size, interpolation=torchvision.transforms.InterpolationMode.BILINEAR)
+    image = F.center_crop(image, [240, 320])
+
     image.unsqueeze_(dim=0)  # add batch dimension
 
     if settings.cuda:
@@ -51,14 +59,12 @@ def test_magic_point():
     original_img_with_adaptation = image.squeeze(dim=0).permute(1, 2, 0).data.cpu()
     original_img_with_adaptation = cv2.UMat(original_img_with_adaptation.numpy())
 
-    draw_points(original_img, points, color=(0, 255, 0))
+    draw_points(original_img, points, color=(255, 255, 255))
     draw_points(original_img_with_adaptation, points_with_adaptation, color=(255, 255, 255))
 
     cv2.imshow("Image", original_img)
     cv2.imshow("Adaptation", original_img_with_adaptation)
     key = cv2.waitKey(delay=0)
-
-    reporter.report(verbose=True)
 
 
 if __name__ == '__main__':
