@@ -3,7 +3,9 @@ from torch.utils.data import Dataset
 import os
 from pathlib import Path
 import numpy as np
+from numpy.random import default_rng
 
+from python.dataset_transforms import dataset_transforms
 from python.homographies import homographic_augmentation, HomographyConfig
 from python.netutils import make_points_labels, scale_valid_map
 
@@ -15,10 +17,12 @@ class CocoDataset(Dataset):
 
         files = list(Path(self.data_path).glob('*.*'))
         self.items = [str(file_path) for file_path in files]
-        np.random.RandomState(seed).shuffle(self.items)
+        default_rng(seed).shuffle(self.items)
         if size != 0:
             self.items = self.items[:size]
         self.homography_config = HomographyConfig()
+        self.do_augmentation = True
+        self.transforms = dataset_transforms()
 
     def __getitem__(self, index):
         file_name = self.items[index]
@@ -28,7 +32,15 @@ class CocoDataset(Dataset):
             print(f'CocoDataset failed to load file {file_name}')
             raise
 
-        image = torch.from_numpy(item_data['image'])
+        if self.do_augmentation:
+            image = item_data['image'] * 255
+            image = image.astype(np.uint8)
+            image = image.transpose([1, 2, 0])
+            augmented_image = self.transforms(image=image)
+            image = augmented_image['image'].float() / 255.
+        else:
+            image = torch.from_numpy(item_data['image'])
+
         points = torch.from_numpy(item_data['points'])
 
         # take only coordinates

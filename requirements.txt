@@ -7,3 +7,4 @@ scipy~=1.7.0
 kornia~=0.5.5
 torchsummary~=1.5.1
 torchmetrics~=0.3.2
+albumentations~=1.0.3
