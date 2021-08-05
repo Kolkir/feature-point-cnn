@@ -4,7 +4,8 @@ import os
 from pathlib import Path
 import numpy as np
 import torchvision
-from netutils import make_points_labels, get_points_coordinates
+from python.netutils import make_points_labels
+from numpy.random import default_rng
 
 
 def read_image(filename):
@@ -33,10 +34,11 @@ class SyntheticDataset(Dataset):
         point_files.sort()
         self.items = list(zip(image_files, point_files))
         self.items = [(str(img_path), str(pts_path)) for img_path, pts_path in self.items]
-        np.random.RandomState(seed).shuffle(self.items)
+        default_rng(seed).shuffle(self.items)
 
     def __getitem__(self, index):
         image = read_image(self.items[index][0])
+
         img_h = image.shape[1]
         img_w = image.shape[2]
         points = read_points(self.items[index][1], self.settings.cell, img_h, img_w)
