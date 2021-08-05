@@ -15,14 +15,15 @@ class BaseTrainer(object):
                                            num_workers=num_workers)
         self.test_dataloader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=True,
                                           num_workers=num_workers)
-        self.use_amp = False
+        self.use_amp = True
         if self.use_amp:
             self.scaler = torch.cuda.amp.GradScaler()
         else:
             self.scaler = None
 
     def train_loop(self, loss_fn, after_back_fn, optimizer):
-        train_loss = 0
+        train_loss = torch.tensor(0., device='cuda' if self.is_cuda else 'cpu')
+        batch_loss = torch.tensor(0., device='cuda' if self.is_cuda else 'cpu')
         prev_batch_index = 0
         real_batch_index = 0
         for batch_index, batch in enumerate(tqdm(self.train_dataloader)):
@@ -34,6 +35,8 @@ class BaseTrainer(object):
                     loss = loss_fn(*batch)
                     # normalize loss to account for batch accumulation
                     loss = loss / self.batch_size_divider
+                    train_loss += loss
+                    batch_loss += loss
 
                 # Scales the loss, and calls backward()
                 # to create scaled gradients
@@ -51,6 +54,7 @@ class BaseTrainer(object):
                 loss = loss_fn(*batch)
                 # normalize loss to account for batch accumulation
                 loss /= self.batch_size_divider
+                train_loss += loss
                 loss.backward()
                 # gradient accumulation
                 if ((batch_index + 1) % self.batch_size_divider == 0) or (
@@ -61,12 +65,12 @@ class BaseTrainer(object):
             # calculate statistics only after optimizer step to preserve graph
             if optimizer_step_done:
                 if real_batch_index > prev_batch_index:
-                    after_back_fn(loss, real_batch_index)
+                    after_back_fn(batch_loss, real_batch_index)
                 prev_batch_index = real_batch_index
-                train_loss += loss.item()
                 real_batch_index += 1
+                batch_loss = 0.
 
-        train_loss /= real_batch_index
+        train_loss = train_loss.item() / real_batch_index
         print(f"Train Avg loss: {train_loss:>8f} \n")
 
     def test_loop(self, loss_fn):
