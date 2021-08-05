@@ -253,15 +253,13 @@ def homography_adaptation(image, net, config):
 
     all_probs, _, _ = net(image)
     all_counts = torch.ones_like(all_probs)
-    all_images = torch.clone(image)
 
     all_probs.unsqueeze_(dim=-1)
     all_counts.unsqueeze_(dim=-1)
-    all_images.unsqueeze_(dim=-1)
 
     shape = image.shape[2:4]
 
-    def step(i, probs, counts, images):
+    def step(probs, counts):
         with torch.no_grad():
             # Sample image patch
             H = sample_homography(shape, perspective=config.perspective, scaling=config.scaling, rotation=config.rotation,
@@ -300,11 +298,10 @@ def homography_adaptation(image, net, config):
             probs = torch.cat([probs, warped_prob_proj.unsqueeze(dim=-1)], dim=-1)
             count = count.repeat([image.shape[0], 1, 1])
             counts = torch.cat([counts, count.unsqueeze(dim=-1)], dim=-1)
-            images = torch.cat([images, warped.unsqueeze(dim=-1)], axis=-1)
-            return probs, counts, images
+            return probs, counts
 
     for i in range(config.num):
-        all_probs, all_counts, all_images = step(i, all_probs, all_counts, all_images)
+        all_probs, all_counts = step(all_probs, all_counts)
 
     all_counts = torch.sum(all_counts, dim=-1)
     max_prob = torch.max(all_probs, dim=-1)
@@ -316,6 +313,8 @@ def homography_adaptation(image, net, config):
         prob = mean_prob
     else:
         raise ValueError(f'Unknown aggregation method: {config.aggregation}')
+
+    prob = torch.where(all_counts >= config.num // 3, prob, torch.zeros_like(prob))
 
     return prob
 
