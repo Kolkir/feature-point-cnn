@@ -45,7 +45,7 @@ def preprocess_coco(coco_path, magic_point_path, settings):
     net_wrapper = InferenceWrapper(weights_path=magic_point_path, settings=settings)
     print('Successfully loaded pre-trained network.')
 
-    batch_size = 4
+    batch_size = 16
     num_workers = 4
 
     train_dataset = CocoPreprocessDataset(coco_path, settings, 'train2014')
