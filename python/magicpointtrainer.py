@@ -21,12 +21,12 @@ class MagicPointTrainer(BaseTrainer):
         self.checkpoint_path = checkpoint_path
         if use_coco:
             self.train_dataset = CocoDataset(dataset_path, settings, 'train')
-            self.test_dataset = CocoDataset(dataset_path, settings, 'test')
+            self.test_dataset = CocoDataset(dataset_path, settings, 'test', size=1000)
         else:
             self.train_dataset = SyntheticDataset(dataset_path, settings, 'training')
             self.test_dataset = SyntheticDataset(dataset_path, settings, 'test')
         super(MagicPointTrainer, self).__init__(self.settings.cuda, self.train_dataset, self.test_dataset,
-                                                self.settings.batch_size)
+                                                self.settings.batch_size, self.settings.batch_size_divider)
         self.learning_rate = self.settings.learning_rate
         self.epochs = self.settings.epochs
         self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
@@ -37,7 +37,15 @@ class MagicPointTrainer(BaseTrainer):
         self.last_labels = None
 
     def train(self, model):
-        optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
+        fake_input = torch.ones((1, 1, 240, 320), dtype=torch.float32)
+        if self.settings.cuda:
+            fake_input = fake_input.cuda()
+        self.summary_writer.add_graph(model, fake_input)
+        self.summary_writer.flush()
+
+        # optimizer = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.Adadelta(model.parameters())
+
         loss = DetectorLoss(self.settings.cuda)
 
         # continue training starting from the latest epoch checkpoint
@@ -72,7 +80,7 @@ class MagicPointTrainer(BaseTrainer):
                 self.summary_writer.add_scalar('Loss/train', loss_value.item(), self.train_iter)
 
                 for name, param in model.named_parameters():
-                    if param.requires_grad and '_bn' not in name:
+                    if param.grad is not None and 'bn' not in name:
                         self.summary_writer.add_histogram(
                             tag=f"params/{name}", values=param, global_step=self.train_iter
                         )
@@ -83,7 +91,8 @@ class MagicPointTrainer(BaseTrainer):
                 img_h = self.last_image.shape[2]
                 img_w = self.last_image.shape[3]
                 points = get_points(self.last_prob_map[0, :, :].unsqueeze(dim=0).cpu(), img_h, img_w, self.settings)
-                true_prob_map = make_prob_map_from_labels(self.last_labels[0, :, :].cpu().numpy(), img_h, img_w, self.settings.cell)
+                true_prob_map = make_prob_map_from_labels(self.last_labels[0, :, :].cpu().numpy(), img_h, img_w,
+                                                          self.settings.cell)
                 true_points = get_points(true_prob_map[0, :, :].unsqueeze(dim=0), img_h, img_w, self.settings)
                 frame = self.last_image[0, 0, :, :].cpu().numpy()
                 res_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
@@ -111,7 +120,6 @@ class MagicPointTrainer(BaseTrainer):
             self.last_image = image
             return loss_value
 
-        scheduler = ExponentialLR(optimizer, gamma=0.9)
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch}\n-------------------------------")
             self.train_loop(train_loss_fn, after_back_fn, optimizer)
@@ -125,7 +133,6 @@ class MagicPointTrainer(BaseTrainer):
             self.test_log_fn(test_loss, epoch)
 
             save_checkpoint('magic_point', epoch, model, optimizer, self.checkpoint_path)
-            scheduler.step()
 
     def test_log_fn(self, loss_value, n_iter):
         self.summary_writer.add_scalar('Loss/test', loss_value, n_iter)
