@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from python.netutils import restore_prob_map
+from netutils import restore_prob_map
 
 
 class ResNetBlock(nn.Module):

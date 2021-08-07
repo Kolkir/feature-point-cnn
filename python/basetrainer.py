@@ -8,8 +8,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
-from python.netutils import get_points, make_prob_map_from_labels, make_points_labels
-from python.saveutils import load_last_checkpoint, save_checkpoint
+from netutils import get_points, make_prob_map_from_labels, make_points_labels
+from saveutils import load_last_checkpoint, save_checkpoint
 
 
 class BaseTrainer(object):
@@ -149,7 +149,7 @@ class BaseTrainer(object):
         batches_num = 0
         with torch.no_grad():
             for batch_index, batch in enumerate(tqdm(self.test_dataloader)):
-                loss_value, logits = loss_fn(*batch).item()
+                loss_value, logits = loss_fn(*batch)
 
                 softmax_result = self.softmax(logits)
                 # normalize metric to account for batch accumulation
@@ -157,7 +157,7 @@ class BaseTrainer(object):
 
                 # normalize loss to account for batch accumulation
                 loss_value /= self.settings.batch_size_divider
-                test_loss += loss_value
+                test_loss += loss_value.item()
 
                 if ((batch_index + 1) % self.settings.batch_size_divider == 0) or (
                         batch_index + 1 == len(self.train_dataloader)):

@@ -1,6 +1,6 @@
 from basetrainer import BaseTrainer
 from coco_dataset import CocoDataset
-from python.losses import GlobalLoss
+from losses import GlobalLoss
 
 from saveutils import load_checkpoint_for_inference
 

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import numpy as np
 import torchvision
-from python.netutils import make_points_labels
+from netutils import make_points_labels
 from numpy.random import default_rng
 
 

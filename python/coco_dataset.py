@@ -5,9 +5,9 @@ from pathlib import Path
 import numpy as np
 from numpy.random import default_rng
 
-from python.dataset_transforms import dataset_transforms
-from python.homographies import homographic_augmentation, HomographyConfig
-from python.netutils import make_points_labels, scale_valid_map
+from dataset_transforms import dataset_transforms
+from homographies import homographic_augmentation, HomographyConfig
+from netutils import make_points_labels, scale_valid_map
 
 
 class CocoDataset(Dataset):

@@ -3,8 +3,8 @@ import time
 import cv2
 import numpy as np
 
-from python.camera import Camera
-from python.inferencewrapper import InferenceWrapper
+from camera import Camera
+from inferencewrapper import InferenceWrapper
 
 
 def run_inference(opt, settings):

@@ -23,7 +23,7 @@
 
 import torch
 from torch.nn.functional import log_softmax, normalize, relu
-from python.homographies import warp_points
+from homographies import warp_points
 
 
 def masked_cross_entropy(logits, targets, mask):

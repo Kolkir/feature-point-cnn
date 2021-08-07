@@ -1,4 +1,4 @@
-from python.homographies import homography_adaptation
+from homographies import homography_adaptation
 from saveutils import load_checkpoint_for_inference
 from superpoint import SuperPoint
 import torch

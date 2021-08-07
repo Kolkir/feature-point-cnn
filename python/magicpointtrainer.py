@@ -1,6 +1,6 @@
 from basetrainer import BaseTrainer
 from losses import DetectorLoss
-from python.coco_dataset import CocoDataset
+from coco_dataset import CocoDataset
 from synthetic_dataset import SyntheticDataset
 
 

@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from python.nms import corners_nms
+from nms import corners_nms
 
 
 def scale_valid_map(data_map, img_h, img_w, cell_size):
