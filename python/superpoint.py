@@ -66,27 +66,6 @@ class ResNetBackbone(nn.Module):
         return nn.Sequential(*layers)
 
 
-class SuperPointBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, res_channels, settings):
-        super(SuperPointBlock, self).__init__()
-        # bias=False - because conv followed by BatchNorm
-        self.conv1 = nn.Conv2d(in_channels, out_channels, settings.detdesc_kernel_size_a, settings.detdesc_stride,
-                               settings.detdesc_padding_a, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU()
-        self.conv2 = nn.Conv2d(out_channels, res_channels, settings.detdesc_kernel_size_b, settings.detdesc_stride,
-                               settings.detdesc_padding_b, bias=False)
-        self.bn2 = nn.BatchNorm2d(res_channels)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.conv2(x)
-        x = self.bn2(x)
-        return x
-
-
 class SuperPoint(nn.Module):
     def __init__(self, settings):
         super(SuperPoint, self).__init__()
@@ -94,8 +73,6 @@ class SuperPoint(nn.Module):
         self.is_descriptor_enabled = True  # used to disable descriptor head when training MagicPoint
 
         self.encoder = ResNetBackbone()
-        # self.detector = SuperPointBlock(*self.settings.detector_dims, self.settings)
-        # self.descriptor = SuperPointBlock(*self.settings.descriptor_dims, self.settings)
 
         self.detector = self.encoder.make_layers(num_residual_blocks=2, in_channels=128, intermediate_channels=65, stride=1)
         self.descriptor = self.encoder.make_layers(num_residual_blocks=2, in_channels=128, intermediate_channels=128, stride=1)

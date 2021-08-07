@@ -1,26 +1,5 @@
 class SuperPointSettings:
     def __init__(self):
-
-
-        self.encoder_kernel_size = (3, 3)
-        self.encoder_stride = (1, 1)
-        self.encoder_padding = (1, 1)
-
-        self.detdesc_kernel_size_a = (3, 3)
-        self.detdesc_kernel_size_b = (1, 1)
-        self.detdesc_stride = (1, 1)
-        self.detdesc_padding_a = (1, 1)
-        self.detdesc_padding_b = (0, 0)
-
-        self.encoder_dims = [(1, 64),
-                             (64, 64),
-                             (64, 128),
-                             (128, 128)]
-
-        self.detector_dims = (128, 256, 65)
-        self.descriptor_dims = (128, 256, 128)  # original value for last layer was 256
-
-
         self.cuda = False
         self.nms_dist = 4
         self.confidence_thresh = 0.015
@@ -34,14 +13,14 @@ class SuperPointSettings:
         self.batch_size_divider = 1  # Used for gradient accumulation
         self.learning_rate = 0.001
         self.epochs = 100
+        self.use_amp = True
+        self.data_loader_num_workers = 4
 
     def read_options(self, opt):
         self.cuda = opt.cuda
         self.nms_dist = opt.nms_dist
         self.confidence_thresh = opt.conf_thresh
         self.nn_thresh = opt.nn_thresh
-        if opt.run_mode == 'inference':
-            self.do_quantization = opt.quantization
-        else:
+        if opt.run_mode != 'inference':
             self.batch_size = opt.batch_size
             self.batch_size_divider = opt.batch_size_divider

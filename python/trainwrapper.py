@@ -16,9 +16,9 @@ class TrainWrapper(object):
     def train_magic_point(self, synthetic_dataset_path, use_coco=False):
         self.net.disable_descriptor()
         magic_point_trainer = MagicPointTrainer(synthetic_dataset_path, self.checkpoint_path, self.settings, use_coco)
-        magic_point_trainer.train(self.net)
+        magic_point_trainer.train('magic_point', self.net)
 
     def train_super_point(self, coco_dataset_path, magic_point_weights):
         super_point_trainer = SuperPointTrainer(coco_dataset_path, self.checkpoint_path, magic_point_weights,
                                                 self.settings)
-        super_point_trainer.train(self.net)
+        super_point_trainer.train('super_point', self.net)
