@@ -6,7 +6,5 @@ CHECK_POINTS_PATH=/run/media/kirill/data/development/superpoint_data/checkpoints
 
 source ./python/venv/bin/activate
 
-PYTHONPATH=/run/media/kirill/data/development/superpoint_data/
-
 python ./python/main.py --cuda train --batch_size_divider 16 --coco_path $COCO_PATH --magic_point_weights $MAGIC_POINT_PT --checkpoint_path $CHECK_POINTS_PATH
 
