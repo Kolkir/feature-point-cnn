@@ -59,9 +59,6 @@ class GlobalLoss(object):
         self.detector_loss = DetectorLoss(is_cuda)
         self.lambda_loss = lambda_loss
         self.cell_size = settings.cell
-        self.detector_loss_value = None
-        self.warped_detector_loss_value = None
-        self.descriptor_loss_value = None
 
     def forward(self, points,
                 true_points,
@@ -72,18 +69,17 @@ class GlobalLoss(object):
                 homographies,
                 valid_mask):
         # Compute the losses for the detector head
-        self.detector_loss_value = self.detector_loss.forward(points, true_points, valid_mask=None)
-        self.warped_detector_loss_value = self.detector_loss.forward(
+        detector_loss_value = self.detector_loss.forward(points, true_points, valid_mask=None)
+        warped_detector_loss_value = self.detector_loss.forward(
             warped_points, warped_true_points,
             valid_mask)
 
         # Compute the loss for the descriptor head
-        self.descriptor_loss_value = self.descriptor_loss(
+        descriptor_loss_value = self.descriptor_loss(
             descriptors, warped_descriptors, homographies, valid_mask, self.cell_size,
             lambda_d=250, positive_margin=1, negative_margin=0.2)
 
-        loss = (self.detector_loss_value + self.warped_detector_loss_value
-                + self.lambda_loss * self.descriptor_loss_value)
+        loss = (detector_loss_value + warped_detector_loss_value) + self.lambda_loss * descriptor_loss_value
 
         return loss
 

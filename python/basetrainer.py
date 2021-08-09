@@ -19,6 +19,7 @@ class BaseTrainer(object):
         self.learning_rate = self.settings.learning_rate
         self.epochs = self.settings.epochs
         self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
+        self.optimizer = None
         self.f1 = 0
         self.train_iter = 0
         self.last_image = None
@@ -29,6 +30,8 @@ class BaseTrainer(object):
         self.last_warped_labels = None
         self.last_valid_mask = None
         print(f'Trainer is initialized with batch size = {self.settings.batch_size}')
+        print(f'Gradient accumulation batch size divider = {self.settings.batch_size_divider}')
+        print(f'Automatic Mixed Precision = {self.settings.use_amp}')
 
         batch_size = self.settings.batch_size // self.settings.batch_size_divider
         self.train_dataset = train_dataset
@@ -87,69 +90,65 @@ class BaseTrainer(object):
             cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
         self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]), self.train_iter)
 
-    def train_loop(self, loss_fn, after_back_fn, optimizer):
+    def train_loop(self):
         train_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
         batch_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
-        prev_batch_index = 0
+        divider = torch.tensor(self.settings.batch_size_divider, device='cuda' if self.settings.cuda else 'cpu')
         real_batch_index = 0
         for batch_index, batch in enumerate(tqdm(self.train_dataloader)):
-            optimizer_step_done = False
-            if self.settings.use_amp:
-                with torch.cuda.amp.autocast():
-                    loss = loss_fn(*batch)
+            with torch.set_grad_enabled(True):
+                if self.settings.use_amp:
+                    with torch.cuda.amp.autocast():
+                        loss = self.train_loss_fn(*batch)
+                        # normalize loss to account for batch accumulation
+                        loss /= divider
+                        train_loss += loss
+                        batch_loss += loss
+
+                    # Scales the loss, and calls backward()
+                    # to create scaled gradients
+                    self.scaler.scale(loss).backward()
+                else:
+                    loss = self.train_loss_fn(*batch)
                     # normalize loss to account for batch accumulation
-                    loss = loss / self.settings.batch_size_divider
+                    loss /= divider
                     train_loss += loss
                     batch_loss += loss
-
-                # Scales the loss, and calls backward()
-                # to create scaled gradients
-                self.scaler.scale(loss).backward()
+                    loss.backward()
 
                 # gradient accumulation
                 if ((batch_index + 1) % self.settings.batch_size_divider == 0) or (
                         batch_index + 1 == len(self.train_dataloader)):
-                    # Unscales gradients and calls or skips optimizer.step()
-                    self.scaler.step(optimizer)
-                    # Updates the scale for next iteration
-                    self.scaler.update()
-                    optimizer_step_done = True
-            else:
-                loss = loss_fn(*batch)
-                # normalize loss to account for batch accumulation
-                loss /= self.settings.batch_size_divider
-                train_loss += loss
-                loss.backward()
-                # gradient accumulation
-                if ((batch_index + 1) % self.settings.batch_size_divider == 0) or (
-                        batch_index + 1 == len(self.train_dataloader)):
-                    optimizer.step()
-                    optimizer_step_done = True
+                    # save statistics
+                    self.after_back_fn(batch_loss, real_batch_index)
 
-            # calculate statistics only after optimizer step to preserve graph
-            if optimizer_step_done:
-                # Clear gradients
-                # This does not zero the memory of each individual parameter,
-                # also the subsequent backward pass uses assignment instead of addition to store gradients,
-                # this reduces the number of memory operations -compared to optimizer.zero_grad()
-                for param in self.model.parameters():
-                    param.grad = None
+                    # Optimizer step - apply gradients
+                    if self.settings.use_amp:
+                        # Unscales gradients and calls or skips optimizer.step()
+                        self.scaler.step(self.optimizer)
+                        # Updates the scale for next iteration
+                        self.scaler.update()
+                    else:
+                        self.optimizer.step()
 
-                if real_batch_index > prev_batch_index:
-                    after_back_fn(batch_loss, real_batch_index)
-                prev_batch_index = real_batch_index
-                real_batch_index += 1
-                batch_loss = 0.
+                    # Clear gradients
+                    # This does not zero the memory of each individual parameter,
+                    # also the subsequent backward pass uses assignment instead of addition to store gradients,
+                    # this reduces the number of memory operations -compared to optimizer.zero_grad()
+                    self.optimizer.zero_grad(set_to_none=True)
+
+                    real_batch_index += 1
+                    batch_loss.fill_(0.)
 
         train_loss = train_loss.item() / real_batch_index
         print(f"Train Avg loss: {train_loss:>8f} \n")
 
-    def test_loop(self, loss_fn):
+    def test_loop(self):
         test_loss = 0
         batches_num = 0
         with torch.no_grad():
             for batch_index, batch in enumerate(tqdm(self.test_dataloader)):
-                loss_value, logits = loss_fn(*batch)
+                loss_value, logits = self.test_loss_fn(*batch)
 
                 softmax_result = self.softmax(logits)
                 # normalize metric to account for batch accumulation
@@ -165,17 +164,17 @@ class BaseTrainer(object):
 
         test_loss /= batches_num
         print(f"Test Avg loss: {test_loss:>8f} \n")
-        return test_loss, len(self.test_dataloader)
+        return test_loss, batches_num
 
     def train(self, name, model):
         self.model = model
         self.add_model_graph(model)
 
-        optimizer = torch.optim.Adadelta(self.model.parameters())
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.settings.learning_rate)
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
-        prev_epoch = load_last_checkpoint(self.checkpoint_path, self.model, optimizer)
+        prev_epoch = load_last_checkpoint(self.checkpoint_path, self.model, self.optimizer)
         check_point_loaded = False
         if prev_epoch >= 0:
             check_point_loaded = True
@@ -188,23 +187,24 @@ class BaseTrainer(object):
 
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch}\n-------------------------------")
-            self.train_loop(self.train_loss_fn, self.after_back_fn, optimizer)
+            self.train_loop()
 
             self.f1 = 0
             self.last_image = None
             self.last_prob_map = None
-            test_loss, batches_num = self.test_loop(self.test_loss_fn)
+            test_loss, batches_num = self.test_loop()
             self.f1 /= batches_num
             print(f"Test Avg F1:{self.f1:7f} \n")
             self.summary_writer.add_scalar('Loss/test', test_loss, epoch)
             self.summary_writer.add_scalar('F1/test', self.f1, epoch)
 
-            save_checkpoint(name, epoch, model, optimizer, self.checkpoint_path)
+            save_checkpoint(name, epoch, model, self.optimizer, self.checkpoint_path)
 
-    def after_back_fn(self, loss_value, batch_index):
+    def after_back_fn(self, loss, batch_index):
         if batch_index % 100 == 0:
-            print(f"loss: {loss_value.item():>7f}")
-            self.summary_writer.add_scalar('Loss/train', loss_value.item(), self.train_iter)
+            loss_value = loss.item()
+            print(f"loss: {loss_value:>7f}")
+            self.summary_writer.add_scalar('Loss/train', loss_value, self.train_iter)
 
             for name, param in self.model.named_parameters():
                 if param.grad is not None and 'bn' not in name:
@@ -226,7 +226,7 @@ class BaseTrainer(object):
 
             self.train_iter += 1
 
-    # The following functions should be overrode in child classes
+    # The following functions should be overwritten in child classes
 
     def train_init(self, check_point_loaded):
         pass
