@@ -5,7 +5,7 @@ from threading import Thread
 class Camera(object):
     def __init__(self, index, img_w, img_h):
         self.cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
-        if not self.cap:
+        if not self.cap.isOpened():
             print('Failed to open camera {0}'.format(index))
             exit(-1)
 
