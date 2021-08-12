@@ -22,6 +22,8 @@
 # SOFTWARE.
 
 from math import pi
+
+import numpy as np
 import torch
 from scipy.stats import truncnorm
 from torchvision.transforms import functional_tensor
@@ -229,7 +231,6 @@ def homographic_augmentation(image, points, config):
     warped_image = homography_transform(image, homography)
     valid_mask = compute_valid_mask(image_shape, homography,
                                     config.valid_border_margin)
-
     warped_points = warp_points(points, homography)
     warped_points = filter_points(warped_points, image_shape)
 
@@ -338,12 +339,10 @@ def compute_valid_mask(image_shape, homography, erosion_radius=0):
     mask = homography_transform(mask, homography, interpolation='nearest')
     if erosion_radius > 0:
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (erosion_radius * 2,) * 2)
-        kernel = torch.from_numpy(kernel)
-        kernel = kernel.to(dtype=torch.int32)
-        # image should be WxCxHxW
-        mask.unsqueeze_(dim=0)
-        mask = erosion(mask, kernel)
-        mask.squeeze_(dim=0)  # remove batch dim
+        mask = mask.numpy().transpose([1, 2, 0])  # adapt channels for OpenCV format
+        mask = cv2.erode(mask, kernel, iterations=1, borderType=cv2.BORDER_CONSTANT, borderValue=0)
+        mask = np.expand_dims(mask, axis=0)  # restore torch image format
+        mask = torch.from_numpy(mask)
     return mask.to(dtype=torch.int32)
 
 
