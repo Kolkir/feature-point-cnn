@@ -14,7 +14,7 @@ class SuperPointSettings:
         self.learning_rate = 0.001
         self.epochs = 100
         self.use_amp = True
-        self.data_loader_num_workers = 4
+        self.data_loader_num_workers = 8
 
     def read_options(self, opt):
         self.cuda = opt.cuda

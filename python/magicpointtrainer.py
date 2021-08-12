@@ -7,8 +7,8 @@ from synthetic_dataset import SyntheticDataset
 class MagicPointTrainer(BaseTrainer):
     def __init__(self, dataset_path, checkpoint_path, settings, use_coco=False):
         if use_coco:
-            self.train_dataset = CocoDataset(dataset_path, settings, 'train')
-            self.test_dataset = CocoDataset(dataset_path, settings, 'test', size=1000)
+            self.train_dataset = CocoDataset(dataset_path, settings, 'train', do_augmentation=False)
+            self.test_dataset = CocoDataset(dataset_path, settings, 'test', do_augmentation=False, size=1000)
         else:
             self.train_dataset = SyntheticDataset(dataset_path, settings, 'training')
             self.test_dataset = SyntheticDataset(dataset_path, settings, 'test')
@@ -29,7 +29,7 @@ class MagicPointTrainer(BaseTrainer):
     def test_loss_fn(self, image, point_labels, *args):
         points_prob_map, descriptors, point_logits = self.model(image)
         if self.settings.cuda:
-            true_points = point_labels.cuda()
+            point_labels = point_labels.cuda()
         loss_value = self.loss(point_logits, point_labels, None)
         return loss_value, point_logits
 

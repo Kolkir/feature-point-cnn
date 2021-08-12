@@ -11,7 +11,7 @@ from netutils import make_points_labels, scale_valid_map
 
 
 class CocoDataset(Dataset):
-    def __init__(self, path, settings, dataset_type, seed=0, size=0):
+    def __init__(self, path, settings, dataset_type, do_augmentation=True, seed=0, size=0):
         self.settings = settings
         self.data_path = os.path.join(path, dataset_type)
 
@@ -21,7 +21,7 @@ class CocoDataset(Dataset):
         if size != 0:
             self.items = self.items[:size]
         self.homography_config = HomographyConfig()
-        self.do_augmentation = True
+        self.do_augmentation = do_augmentation
         self.transforms = dataset_transforms()
 
     def __getitem__(self, index):
