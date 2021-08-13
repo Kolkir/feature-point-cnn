@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 from tqdm import tqdm
-import synthetic_shapes
+import src.synthetic_shapes as synthetic_shapes
 import numpy as np
 import cv2
 

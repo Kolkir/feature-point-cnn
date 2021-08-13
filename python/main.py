@@ -1,9 +1,9 @@
 import argparse
 
-from preprocess_coco import preprocess_coco
-from inference import run_inference
-from settings import SuperPointSettings
-from trainwrapper import TrainWrapper
+from src.preprocess_coco import preprocess_coco
+from src.inference import run_inference
+from src.settings import SuperPointSettings
+from src.trainwrapper import TrainWrapper
 
 
 def main():
