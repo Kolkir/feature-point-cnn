@@ -7,8 +7,8 @@ from src.saveutils import load_checkpoint_for_inference
 class SuperPointTrainer(BaseTrainer):
     def __init__(self, coco_dataset_path, checkpoint_path, magic_point_weights, settings):
         self.magic_point_weights = magic_point_weights
-        self.train_dataset = CocoDataset(coco_dataset_path, settings, 'train')
-        self.test_dataset = CocoDataset(coco_dataset_path, settings, 'test', size=1000)
+        self.train_dataset = CocoDataset(coco_dataset_path, settings, 'train', do_augmentation=False)
+        self.test_dataset = CocoDataset(coco_dataset_path, settings, 'test', size=1000, do_augmentation=False)
         super(SuperPointTrainer, self).__init__(settings, checkpoint_path, self.train_dataset, self.test_dataset)
         self.loss = GlobalLoss(self.settings.cuda, lambda_loss=0.1, settings=self.settings)
 
