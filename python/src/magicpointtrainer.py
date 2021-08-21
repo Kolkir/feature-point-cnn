@@ -13,7 +13,7 @@ class MagicPointTrainer(BaseTrainer):
             self.train_dataset = SyntheticDataset(dataset_path, settings, 'training')
             self.test_dataset = SyntheticDataset(dataset_path, settings, 'test')
         super(MagicPointTrainer, self).__init__(settings, checkpoint_path, self.train_dataset, self.test_dataset)
-        self.loss = DetectorLoss(self.settings.cuda)
+        self.loss = DetectorLoss(self.settings.cuda, self.settings.cell)
 
     def train_loss_fn(self, image, true_points, *args):
         prob_map, descriptors, point_logits = self.model.forward(image)

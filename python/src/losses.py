@@ -36,17 +36,49 @@ def masked_cross_entropy(logits, targets, mask):
     return loss_value
 
 
+def masked_distance_loss(logits, target, mask, cell_size, indices):
+    h_target = torch.floor(target / cell_size)
+    w_target = target - h_target * cell_size
+    probabilities = torch.softmax(logits, dim=1)
+    _, prediction_index = torch.max(probabilities, dim=1)
+
+    h_prediction = torch.floor(prediction_index / cell_size)
+    w_prediction = prediction_index - h_prediction * cell_size
+    h_diff = h_target - h_prediction
+    w_diff = w_target - w_prediction
+    losses = (h_diff * h_diff) + (w_diff * w_diff)
+    losses /= cell_size * cell_size
+
+    log_probabilities = log_softmax(logits, dim=1)
+    classification_losses = -torch.gather(log_probabilities, dim=1, index=target.unsqueeze(1))
+
+    losses = torch.where(target >= 64., classification_losses, losses)
+
+    if mask is None:
+        loss_value = losses.mean()
+    else:
+        loss_value = torch.masked_select(losses, mask.bool()).mean()
+
+    return loss_value
+
+
 class DetectorLoss(object):
-    def __init__(self, is_cuda):
+    def __init__(self, is_cuda, cell_size):
         # self.cross_entropy = torch.nn.CrossEntropyLoss()
-        pass
+        self.cell_size = cell_size
+        self.indices = torch.arange(start=0, end=65)
+        self.indices.unsqueeze_(dim=1)
+        self.indices.unsqueeze_(dim=1)
+        if is_cuda:
+            self.indices = self.indices.cuda()
 
     def forward(self, points, true_points, valid_mask):
         if (valid_mask is not None) and len(valid_mask.shape) <= 2:  # skip empty masks
             valid_mask = None
         # was used for testing
         # loss_value = self.cross_entropy(points, true_points)
-        masked_loss_value = masked_cross_entropy(points, true_points, valid_mask)
+        # masked_loss_value = masked_cross_entropy(points, true_points, valid_mask)
+        masked_loss_value = masked_distance_loss(points, true_points, valid_mask, self.cell_size, self.indices)
 
         return masked_loss_value
 
@@ -56,7 +88,7 @@ class DetectorLoss(object):
 
 class GlobalLoss(object):
     def __init__(self, is_cuda, lambda_loss, settings):
-        self.detector_loss = DetectorLoss(is_cuda)
+        self.detector_loss = DetectorLoss(is_cuda, settings.cell)
         self.lambda_loss = lambda_loss
         self.cell_size = settings.cell
 
@@ -80,7 +112,6 @@ class GlobalLoss(object):
             lambda_d=250, positive_margin=1, negative_margin=0.2)
 
         loss = (detector_loss_value + warped_detector_loss_value) + self.lambda_loss * descriptor_loss_value
-
         return loss
 
     def __call__(self, points,
