@@ -7,9 +7,9 @@ def dataset_transforms():
     transforms = A.Compose([
         A.RandomBrightnessContrast(p=p),
         A.OneOf([
-            A.MotionBlur(),
-            A.MedianBlur(),
-            A.Blur(),
+            A.MotionBlur(blur_limit=3),
+            A.MedianBlur(blur_limit=3),
+            A.Blur(blur_limit=3),
         ], p=p),
         A.OneOf([
             A.MultiplicativeNoise(),
