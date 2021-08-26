@@ -18,10 +18,12 @@ def run_inference(opt, settings):
 
     stop_img = None
     stop_features = None
+    do_blur = False
 
     while True:
         frame, ret = camera.get_frame()
-        frame = cv2.blur(frame, (5, 5))
+        if do_blur:
+            frame = cv2.blur(frame, (3, 3))
         if ret:
             new_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
             features = get_features(frame, net)
@@ -52,6 +54,8 @@ def run_inference(opt, settings):
                 stop_features = features[0:n, :]
                 stop_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
                 draw_features(stop_features, stop_img)
+            if key == ord('b'):
+                do_blur = not do_blur
             if key == ord('t'):
                 net.trace(frame, opt.out_file_name)
                 print('Model saved, \'t\' pressed.')
