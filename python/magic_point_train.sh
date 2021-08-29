@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-SYNTHETIC_DATA_PATH=/run/media/kirill/data/data_sets/magicpoint/
-CHECK_POINTS_PATH=/run/media/kirill/data/development/magicpoint_data/checkpoints
+SYNTHETIC_DATA_PATH=/data_sets/synthetic/
+CHECK_POINTS_PATH=/magicpoint/
 
-python main.py --cuda train --batch_size 32 --synthetic_path $SYNTHETIC_DATA_PATH  --checkpoint_path $CHECK_POINTS_PATH
+python main.py --cuda train --batch-size 32 --synthetic-path $SYNTHETIC_DATA_PATH  --checkpoint-path $CHECK_POINTS_PATH

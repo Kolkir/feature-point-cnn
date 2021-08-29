@@ -21,7 +21,7 @@ class BaseTrainer(object):
         self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
         self.optimizer = None
         self.f1 = 0
-        self.train_iter = 0
+        self.global_train_index = 0
         self.last_image = None
         self.last_prob_map = None
         self.last_labels = None
@@ -71,7 +71,7 @@ class BaseTrainer(object):
         frame_labels = (labels[0, :, :] != 64).cpu().numpy()
         frame = mask[0, 0, :, :].cpu().numpy()
         res_img = (np.dstack((frame, frame_labels, frame_predictions)) * 255.).astype('uint8')
-        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]), self.train_iter)
+        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]), self.global_train_index)
 
     def add_image_summary(self, name, image, prob_map, labels):
         img_h = image.shape[2]
@@ -88,7 +88,7 @@ class BaseTrainer(object):
         for point in true_points.T:
             point_int = (int(round(point[0])), int(round(point[1])))
             cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
-        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]), self.train_iter)
+        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]), self.global_train_index)
 
     def train_loop(self):
         train_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
@@ -120,7 +120,8 @@ class BaseTrainer(object):
                 if ((batch_index + 1) % self.settings.batch_size_divider == 0) or (
                         batch_index + 1 == len(self.train_dataloader)):
                     # save statistics
-                    self.after_back_fn(batch_loss, real_batch_index)
+                    if self.settings.write_statistics:
+                        self.write_batch_statistics(batch_loss, real_batch_index)
 
                     # Optimizer step - apply gradients
                     if self.settings.use_amp:
@@ -141,7 +142,7 @@ class BaseTrainer(object):
                     batch_loss.fill_(0.)
 
         train_loss = train_loss.item() / real_batch_index
-        print(f"Train Avg loss: {train_loss:>8f} \n")
+        return train_loss
 
     def test_loop(self):
         test_loss = 0
@@ -183,36 +184,42 @@ class BaseTrainer(object):
 
         self.train_init(check_point_loaded)
 
-        self.train_iter = 0
+        self.global_train_index = 0
 
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch}\n-------------------------------")
-            self.train_loop()
+            train_loss = self.train_loop()
+            print(f"Train Loss:{train_loss:7f} \n")
+            if self.settings.write_statistics:
+                self.summary_writer.add_scalar('Loss/train', train_loss, epoch)
 
             self.f1 = 0
             self.last_image = None
             self.last_prob_map = None
             test_loss, batches_num = self.test_loop()
             self.f1 /= batches_num
-            print(f"Test Avg F1:{self.f1:7f} \n")
-            self.summary_writer.add_scalar('Loss/test', test_loss, epoch)
-            self.summary_writer.add_scalar('F1/test', self.f1, epoch)
+
+            print(f"Test Loss:{test_loss:7f} \n")
+            print(f"Test F1:{self.f1:7f} \n")
+            if self.settings.write_statistics:
+                self.summary_writer.add_scalar('Loss/test', test_loss, epoch)
+                self.summary_writer.add_scalar('F1/test', self.f1, epoch)
 
             save_checkpoint(name, epoch, model, self.optimizer, self.checkpoint_path)
 
-    def after_back_fn(self, loss, batch_index):
+    def write_batch_statistics(self, loss, batch_index):
         if batch_index % 100 == 0:
             loss_value = loss.item()
             print(f"loss: {loss_value:>7f}")
-            self.summary_writer.add_scalar('Loss/train', loss_value, self.train_iter)
+            self.summary_writer.add_scalar('Loss/train', loss_value, self.global_train_index)
 
             for name, param in self.model.named_parameters():
                 if param.grad is not None and 'bn' not in name:
                     self.summary_writer.add_histogram(
-                        tag=f"params/{name}", values=param, global_step=self.train_iter
+                        tag=f"params/{name}", values=param, global_step=self.global_train_index
                     )
                     self.summary_writer.add_histogram(
-                        tag=f"grads/{name}", values=param.grad, global_step=self.train_iter
+                        tag=f"grads/{name}", values=param.grad, global_step=self.global_train_index
                     )
 
             if self.last_image is not None:
@@ -224,7 +231,7 @@ class BaseTrainer(object):
                 self.add_mask_image_summary('mask', self.last_valid_mask, self.last_warped_labels,
                                             self.last_warped_prob_map)
 
-            self.train_iter += 1
+            self.global_train_index += 1
 
     # The following functions should be overwritten in child classes
 

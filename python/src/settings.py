@@ -15,12 +15,14 @@ class SuperPointSettings:
         self.epochs = 100
         self.use_amp = True
         self.data_loader_num_workers = 4
+        self.write_statistics = True
 
     def read_options(self, opt):
         self.cuda = opt.cuda
         self.nms_dist = opt.nms_dist
         self.confidence_thresh = opt.conf_thresh
         self.nn_thresh = opt.nn_thresh
+        self.write_statistics = opt.write_statistics
         if opt.run_mode != 'inference':
             self.batch_size = opt.batch_size
             self.batch_size_divider = opt.batch_size_divider
