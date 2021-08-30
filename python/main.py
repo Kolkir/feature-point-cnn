@@ -25,7 +25,7 @@ def main():
 
     parser.add_argument('--write-statistics', action='store_true', dest='write_statistics',
                         help='Write tensorboard statistics')
-    parser.add_argument('--no-write_statistics', action='store_false', dest='write_statistics',
+    parser.add_argument('--no-write-statistics', action='store_false', dest='write_statistics',
                         help='Don\'t write tensorboard statistics')
     parser.set_defaults(write_statistics=True)
 
