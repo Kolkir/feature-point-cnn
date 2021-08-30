@@ -22,7 +22,7 @@ def load_checkpoint_for_inference(filename, model, load_legacy=False):
     return False
 
 
-def load_last_checkpoint(path, model, optimizer):
+def load_last_checkpoint(path, model, optimizer, scaler):
     if os.path.exists(path):
         files = list(Path(path).glob('*.pt'))
         if len(files) > 0:
@@ -36,29 +36,32 @@ def load_last_checkpoint(path, model, optimizer):
 
             files = sorted(files, reverse=True, key=file_number)
             filename = files[0]
-            return load_checkpoint(filename, model, optimizer)
+            return load_checkpoint(filename, model, optimizer, scaler)
     return -1
 
 
-def load_checkpoint(filename, model, optimizer):
+def load_checkpoint(filename, model, optimizer, scaler):
     if os.path.exists(filename):
         checkpoint = torch.load(filename)
         if checkpoint:
             model.load_state_dict(checkpoint['model_state_dict'])
-            if optimizer is not None:
+            if optimizer is not None and 'optimizer_state_dict' in checkpoint:
                 optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if scaler is not None and 'scaler_state_dict' in checkpoint:
+                scaler.load_state_dict(checkpoint['scaler_state_dict'])
             epoch = checkpoint['epoch']
             print(f'Checkpoint {filename} was successfully loaded')
             return epoch
     return -1
 
 
-def save_checkpoint(name, epoch, model, optimizer, path):
+def save_checkpoint(name, epoch, model, optimizer, scaler, path):
     Path(path).mkdir(parents=True, exist_ok=True)
     filename = os.path.join(path, f'{name}_{epoch}.pt')
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
+        'scaler_state_dict': scaler.state_dict()
     }, filename)
     print(f'Checkpoint {filename} was successfully saved')

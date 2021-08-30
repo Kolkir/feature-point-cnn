@@ -42,11 +42,7 @@ class BaseTrainer(object):
         self.test_dataloader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=True,
                                           num_workers=self.settings.data_loader_num_workers)
 
-        if self.settings.use_amp:
-            self.scaler = torch.cuda.amp.GradScaler()
-        else:
-            self.scaler = None
-
+        self.scaler = torch.cuda.amp.GradScaler()
         self.model = None
         self.softmax = torch.nn.Softmax(dim=1)
         self.f1_metric = torchmetrics.F1(num_classes=65, mdmc_average='samplewise')
@@ -164,7 +160,6 @@ class BaseTrainer(object):
                     batches_num += 1
 
         test_loss /= batches_num
-        print(f"Test Avg loss: {test_loss:>8f} \n")
         return test_loss, batches_num
 
     def train(self, name, model):
@@ -175,7 +170,7 @@ class BaseTrainer(object):
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
-        prev_epoch = load_last_checkpoint(self.checkpoint_path, self.model, self.optimizer)
+        prev_epoch = load_last_checkpoint(self.checkpoint_path, self.model, self.optimizer, self.scaler)
         check_point_loaded = False
         if prev_epoch >= 0:
             check_point_loaded = True
@@ -205,7 +200,7 @@ class BaseTrainer(object):
                 self.summary_writer.add_scalar('Loss/test', test_loss, epoch)
                 self.summary_writer.add_scalar('F1/test', self.f1, epoch)
 
-            save_checkpoint(name, epoch, model, self.optimizer, self.checkpoint_path)
+            save_checkpoint(name, epoch, model, self.optimizer, self.scaler, self.checkpoint_path)
 
     def write_batch_statistics(self, loss, batch_index):
         if batch_index % 100 == 0:
