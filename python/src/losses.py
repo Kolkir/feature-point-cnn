@@ -87,10 +87,9 @@ class DetectorLoss(object):
 
 
 class GlobalLoss(object):
-    def __init__(self, is_cuda, lambda_loss, settings):
-        self.detector_loss = DetectorLoss(is_cuda, settings.cell)
-        self.lambda_loss = lambda_loss
-        self.cell_size = settings.cell
+    def __init__(self, settings):
+        self.settings = settings
+        self.detector_loss = DetectorLoss(settings.cuda, settings.cell)
 
     def forward(self, points,
                 true_points,
@@ -107,11 +106,13 @@ class GlobalLoss(object):
             valid_mask)
 
         # Compute the loss for the descriptor head
-        descriptor_loss_value = self.descriptor_loss(
-            descriptors, warped_descriptors, homographies, valid_mask, self.cell_size,
-            lambda_d=250, positive_margin=1, negative_margin=0.2)
+        # descriptor_loss_value = self.descriptor_loss(
+        #     descriptors, warped_descriptors, homographies, valid_mask, self.settings.cell,
+        #     lambda_d=self.settings.lambda_d, positive_margin=self.settings.positive_margin,
+        #     negative_margin=self.settings.negative_margin)
+        descriptor_loss_value = self.descriptor_loss_mse(descriptors, warped_descriptors, valid_mask)
 
-        loss = (detector_loss_value + warped_detector_loss_value) + self.lambda_loss * descriptor_loss_value
+        loss = (detector_loss_value + warped_detector_loss_value) + descriptor_loss_value
         return loss
 
     def __call__(self, points,
@@ -130,6 +131,29 @@ class GlobalLoss(object):
                             warped_descriptors,
                             homographies,
                             valid_mask)
+
+    def descriptor_loss_mse(self, descriptors, warped_descriptors, valid_mask):
+        # Compute the position of the center pixel of every cell in the image
+        batch_size = descriptors.shape[0]
+        hc = descriptors.shape[2]
+        wc = descriptors.shape[3]
+
+        # Normalize the descriptors and
+        descriptors = normalize(descriptors, dim=1, p=2)
+        warped_descriptors = normalize(warped_descriptors, dim=1, p=2)
+
+        # Compute the loss
+        loss = (descriptors - warped_descriptors) ** 2
+        loss = torch.mean(loss, dim=1)
+
+        # Mask the pixels if bordering artifacts appear
+        valid_mask = torch.ones([batch_size, hc, wc], dtype=torch.float32) if valid_mask is None else valid_mask
+        valid_mask = torch.reshape(valid_mask, [batch_size, hc, wc])
+
+        normalization = torch.sum(valid_mask) * float(hc * wc)
+        loss = torch.sum(valid_mask * loss) / normalization
+
+        return loss
 
     def descriptor_loss(self, descriptors, warped_descriptors, homographies, valid_mask, cell_size, positive_margin,
                         negative_margin, lambda_d):

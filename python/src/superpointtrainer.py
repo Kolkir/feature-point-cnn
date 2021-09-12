@@ -10,7 +10,7 @@ class SuperPointTrainer(BaseTrainer):
         self.train_dataset = CocoDataset(coco_dataset_path, settings, 'train', do_augmentation=False)
         self.test_dataset = CocoDataset(coco_dataset_path, settings, 'test', size=1000, do_augmentation=False)
         super(SuperPointTrainer, self).__init__(settings, checkpoint_path, self.train_dataset, self.test_dataset)
-        self.loss = GlobalLoss(self.settings.cuda, lambda_loss=0.1, settings=self.settings)
+        self.loss = GlobalLoss(self.settings)
 
     def train_init(self, check_point_loaded):
         if not check_point_loaded:

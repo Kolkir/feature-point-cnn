@@ -81,12 +81,15 @@ def get_best_correspondences(stop_features, features):
     correspondences = []
     indices = []
     for stop_index, stop_feature in enumerate(stop_features):
-        min_dist = 100.
+        min_dist = 0.00008
         min_index = -1
+        a = stop_feature[3:]
+        a = a / np.linalg.norm(a)
         for new_index, feature in enumerate(features):
-            a = stop_feature[3:]
             b = feature[3:]
-            dist = np.linalg.norm(a - b, ord=2)
+            b = b / np.linalg.norm(b)
+            dist = (a - b) ** 2
+            dist = np.mean(dist)
             if dist <= min_dist:
                 min_dist = dist
                 min_index = new_index

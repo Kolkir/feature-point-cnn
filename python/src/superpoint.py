@@ -29,41 +29,63 @@ class ResNetBlock(nn.Module):
         return x
 
 
-class ResNetBackbone(nn.Module):
+def make_layers(num_residual_blocks, in_channels, intermediate_channels, stride):
+    layers = []
+
+    identity_downsample = nn.Sequential(
+        nn.Conv2d(in_channels, intermediate_channels, kernel_size=1, stride=stride, bias=False),
+        nn.BatchNorm2d(intermediate_channels))
+    layers.append(ResNetBlock(in_channels, intermediate_channels, identity_downsample, stride))
+
+    for i in range(num_residual_blocks - 1):
+        layers.append(ResNetBlock(intermediate_channels, intermediate_channels))
+
+    return nn.Sequential(*layers)
+
+
+class Encoder(nn.Module):
     def __init__(self, image_channels=1):
-        super(ResNetBackbone, self).__init__()
+        super(Encoder, self).__init__()
 
         self.conv1 = nn.Conv2d(image_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        # ResNetLayers
-        self.layer1 = self.make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=64, stride=1)
-        self.layer2 = self.make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=128, stride=2)
-
     def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.max_pool(x)
-
-        x = self.layer1(x)
-        x = self.layer2(x)
         return x
 
-    def make_layers(self, num_residual_blocks, in_channels,  intermediate_channels, stride):
-        layers = []
 
-        identity_downsample = nn.Sequential(
-            nn.Conv2d(in_channels, intermediate_channels, kernel_size=1, stride=stride, bias=False),
-            nn.BatchNorm2d(intermediate_channels))
-        layers.append(ResNetBlock(in_channels, intermediate_channels, identity_downsample, stride))
+class Detector(nn.Module):
+    def __init__(self):
+        super(Detector, self).__init__()
+        # ResNetLayers
+        self.layer1 = make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=64, stride=1)
+        self.layer2 = make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=128, stride=2)
+        self.out_layer = make_layers(num_residual_blocks=2, in_channels=128, intermediate_channels=65, stride=1)
 
-        for i in range(num_residual_blocks - 1):
-            layers.append(ResNetBlock(intermediate_channels, intermediate_channels))
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.out_layer(x)
+        return x
 
-        return nn.Sequential(*layers)
+
+class Descriptor(nn.Module):
+    def __init__(self):
+        super(Descriptor, self).__init__()
+        # ResNetLayers
+        self.layer1 = make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=64, stride=1)
+        self.out_layer = make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=128, stride=2)
+
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.out_layer(x)
+        return x
 
 
 class SuperPoint(nn.Module):
@@ -72,10 +94,9 @@ class SuperPoint(nn.Module):
         self.settings = settings
         self.is_descriptor_enabled = True  # used to disable descriptor head when training MagicPoint
 
-        self.encoder = ResNetBackbone()
-
-        self.detector = self.encoder.make_layers(num_residual_blocks=2, in_channels=128, intermediate_channels=65, stride=1)
-        self.descriptor = self.encoder.make_layers(num_residual_blocks=2, in_channels=128, intermediate_channels=128, stride=1)
+        self.encoder = Encoder()
+        self.detector = Detector()
+        self.descriptor = Descriptor()
 
     def disable_descriptor(self):
         self.is_descriptor_enabled = False

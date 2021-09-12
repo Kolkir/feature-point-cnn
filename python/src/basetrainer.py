@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
+from src.scheduler import Scheduler
 from src.netutils import get_points, make_prob_map_from_labels, make_points_labels
 from src.saveutils import load_last_checkpoint, save_checkpoint
 
@@ -18,8 +19,11 @@ class BaseTrainer(object):
         self.checkpoint_path = checkpoint_path
         self.learning_rate = self.settings.learning_rate
         self.epochs = self.settings.epochs
-        self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
+        self.summary_writer = None
+        if self.settings.write_statistics:
+            self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
         self.optimizer = None
+        self.scheduler = None
         self.f1 = 0
         self.global_train_index = 0
         self.last_image = None
@@ -67,7 +71,8 @@ class BaseTrainer(object):
         frame_labels = (labels[0, :, :] != 64).cpu().numpy()
         frame = mask[0, 0, :, :].cpu().numpy()
         res_img = (np.dstack((frame, frame_labels, frame_predictions)) * 255.).astype('uint8')
-        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]), self.global_train_index)
+        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]),
+                                      self.global_train_index)
 
     def add_image_summary(self, name, image, prob_map, labels):
         img_h = image.shape[2]
@@ -84,14 +89,15 @@ class BaseTrainer(object):
         for point in true_points.T:
             point_int = (int(round(point[0])), int(round(point[1])))
             cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
-        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]), self.global_train_index)
+        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]),
+                                      self.global_train_index)
 
     def train_loop(self):
         train_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
-        batch_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
         divider = torch.tensor(self.settings.batch_size_divider, device='cuda' if self.settings.cuda else 'cpu')
         real_batch_index = 0
-        for batch_index, batch in enumerate(tqdm(self.train_dataloader)):
+        progress_bar = tqdm(self.train_dataloader)
+        for batch_index, batch in enumerate(progress_bar):
             with torch.set_grad_enabled(True):
                 if self.settings.use_amp:
                     with torch.cuda.amp.autocast():
@@ -99,7 +105,6 @@ class BaseTrainer(object):
                         # normalize loss to account for batch accumulation
                         loss /= divider
                         train_loss += loss
-                        batch_loss += loss
 
                     # Scales the loss, and calls backward()
                     # to create scaled gradients
@@ -109,15 +114,23 @@ class BaseTrainer(object):
                     # normalize loss to account for batch accumulation
                     loss /= divider
                     train_loss += loss
-                    batch_loss += loss
                     loss.backward()
 
                 # gradient accumulation
                 if ((batch_index + 1) % self.settings.batch_size_divider == 0) or (
                         batch_index + 1 == len(self.train_dataloader)):
+
+                    current_loss = train_loss / real_batch_index
+
                     # save statistics
                     if self.settings.write_statistics:
-                        self.write_batch_statistics(batch_loss, real_batch_index)
+                        self.write_batch_statistics(real_batch_index)
+
+                    # self.scheduler.step(real_batch_index, batch_loss)
+                    self.scheduler.step()
+                    if (real_batch_index + 1) % 10 == 0:
+                        progress_bar.set_postfix(
+                            {'Loss': current_loss.item(), 'Learning rate': self.scheduler.get_last_lr()})
 
                     # Optimizer step - apply gradients
                     if self.settings.use_amp:
@@ -134,8 +147,8 @@ class BaseTrainer(object):
                     # this reduces the number of memory operations -compared to optimizer.zero_grad()
                     self.optimizer.zero_grad(set_to_none=True)
 
+                    self.global_train_index += 1
                     real_batch_index += 1
-                    batch_loss.fill_(0.)
 
         train_loss = train_loss.item() / real_batch_index
         return train_loss
@@ -162,11 +175,38 @@ class BaseTrainer(object):
         test_loss /= batches_num
         return test_loss, batches_num
 
+    def create_optimizer(self):
+        def exclude(n):
+            return "bn" in n or "bias" in n or "identity" in n
+
+        def include(n):
+            return not exclude(n)
+
+        named_parameters = list(self.model.named_parameters())
+        gain_or_bias_params = [p for n, p in named_parameters if exclude(n) and p.requires_grad]
+        rest_params = [p for n, p in named_parameters if include(n) and p.requires_grad]
+
+        self.optimizer = torch.optim.AdamW(
+            [
+                {"params": gain_or_bias_params, "weight_decay": 0.},
+                {"params": rest_params, "weight_decay": self.settings.optimizer_weight_decay},
+            ],
+            lr=self.settings.learning_rate,
+            betas=(self.settings.optimizer_beta1, self.settings.optimizer_beta2),
+            eps=self.settings.optimizer_eps,
+        )
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
+                                                                              T_0=self.settings.scheduler_sin_range,
+                                                                              T_mult=1)
+        # self.scheduler = Scheduler(self.optimizer, lr=self.settings.learning_rate, gamma=0.9, update_steps=100,
+        #                            plateau_steps=3)
+
     def train(self, name, model):
         self.model = model
-        self.add_model_graph(model)
+        if self.settings.write_statistics:
+            self.add_model_graph(model)
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.settings.learning_rate)
+        self.create_optimizer()
 
         # continue training starting from the latest epoch checkpoint
         start_epoch = 0
@@ -202,12 +242,8 @@ class BaseTrainer(object):
 
             save_checkpoint(name, epoch, model, self.optimizer, self.scaler, self.checkpoint_path)
 
-    def write_batch_statistics(self, loss, batch_index):
-        if batch_index % 100 == 0:
-            loss_value = loss.item()
-            print(f"loss: {loss_value:>7f}")
-            self.summary_writer.add_scalar('Loss/train', loss_value, self.global_train_index)
-
+    def write_batch_statistics(self, batch_index):
+        if (batch_index + 1) % 100 == 0:
             for name, param in self.model.named_parameters():
                 if param.grad is not None and 'bn' not in name:
                     self.summary_writer.add_histogram(
@@ -225,8 +261,6 @@ class BaseTrainer(object):
                                        self.last_warped_labels)
                 self.add_mask_image_summary('mask', self.last_valid_mask, self.last_warped_labels,
                                             self.last_warped_prob_map)
-
-            self.global_train_index += 1
 
     # The following functions should be overwritten in child classes
 
