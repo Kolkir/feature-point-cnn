@@ -27,7 +27,7 @@ class SuperPointSettings:
         self.epochs = 100
 
         self.use_amp = True
-        self.data_loader_num_workers = 0
+        self.data_loader_num_workers = 4
         self.write_statistics = True
 
     def read_options(self, opt):
