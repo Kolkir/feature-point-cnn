@@ -104,17 +104,17 @@ class BaseTrainer(object):
                         loss = self.train_loss_fn(*batch)
                         # normalize loss to account for batch accumulation
                         loss /= divider
-                        train_loss += loss
 
                     # Scales the loss, and calls backward()
                     # to create scaled gradients
                     self.scaler.scale(loss).backward()
+                    train_loss += loss.detach()
                 else:
                     loss = self.train_loss_fn(*batch)
                     # normalize loss to account for batch accumulation
                     loss /= divider
-                    train_loss += loss
                     loss.backward()
+                    train_loss += loss.detach()
 
                 # gradient accumulation
                 if ((batch_index + 1) % self.settings.batch_size_divider == 0) or (
