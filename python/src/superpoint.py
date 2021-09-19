@@ -13,9 +13,8 @@ def conv1x1(in_planes, out_planes, stride=1):
 
 
 class AxialAttention(nn.Module):
-    def __init__(self, in_planes, out_planes, groups=8, kernel_size=56,
-                 stride=1, bias=False, width=False):
-        assert (in_planes % groups == 0) and (out_planes % groups == 0)
+    def __init__(self, in_planes, out_planes, kernel_size, groups=8, stride=1, bias=False, width=False, cuda=True):
+        # assert (in_planes % groups == 0) and (out_planes % groups == 0)
         super(AxialAttention, self).__init__()
         self.in_planes = in_planes
         self.out_planes = out_planes
@@ -27,16 +26,18 @@ class AxialAttention(nn.Module):
         self.width = width
 
         # Multi-head self attention
-        self.qkv_transform = nn.Conv1d(in_planes, out_planes * 2, kernel_size=1, stride=1,
-                                       padding=0, bias=False)
+        self.qkv_transform = nn.Conv1d(in_planes, out_planes * 2, kernel_size=1, stride=1, padding=0, bias=False)
         self.bn_qkv = nn.BatchNorm1d(out_planes * 2)
         self.bn_similarity = nn.BatchNorm2d(groups * 3)
         self.bn_output = nn.BatchNorm1d(out_planes * 2)
 
         # Position embedding
-        self.relative = nn.Parameter(torch.randn(self.group_planes * 2, kernel_size * 2 - 1), requires_grad=True)
-        query_index = torch.arange(kernel_size).unsqueeze(0)
-        key_index = torch.arange(kernel_size).unsqueeze(1)
+        device = 'cpu'
+        if cuda:
+            device = 'cuda'
+        self.relative = nn.Parameter(torch.randn(self.group_planes * 2, kernel_size * 2 - 1, device=device), requires_grad=True)
+        query_index = torch.arange(kernel_size, device=device).unsqueeze(0)
+        key_index = torch.arange(kernel_size, device=device).unsqueeze(1)
         relative_index = key_index - query_index + kernel_size - 1
         self.register_buffer('flatten_index', relative_index.view(-1))
         if stride > 1:
@@ -46,9 +47,9 @@ class AxialAttention(nn.Module):
 
     def forward(self, x):
         if self.width:
-            x = x.permute(0, 2, 1, 3)
+            x = x.permute(0, 2, 1, 3)  # B, H, C, W
         else:
-            x = x.permute(0, 3, 1, 2)  # N, W, C, H
+            x = x.permute(0, 3, 1, 2)  # B, W, C, H
         N, W, C, H = x.shape
         x = x.contiguous().view(N * W, C, H)
 
@@ -92,20 +93,14 @@ class AxialAttention(nn.Module):
 
 
 class AxialBlock(nn.Module):
-    expansion = 2
-
-    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
-                 base_width=64, kernel_size=56):
+    def __init__(self, inplanes, outplanes, kernel_size, stride=1, downsample=None, groups=1, cuda=True):
         super(AxialBlock, self).__init__()
-        width = int(planes * (base_width / 64.))
-        # Both self.conv2 and self.downsample layers downsample the input when stride != 1
-        self.conv_down = conv1x1(inplanes, width)
-        self.bn1 = nn.BatchNorm2d(width)
-        self.hight_block = AxialAttention(width, width, groups=groups, kernel_size=kernel_size)
-        self.width_block = AxialAttention(width, width, groups=groups, kernel_size=kernel_size, stride=stride,
-                                          width=True)
-        self.conv_up = conv1x1(width, planes * self.expansion)
-        self.bn2 = nn.BatchNorm2d(planes * self.expansion)
+        assert (len(kernel_size) == 2)
+        self.hight_block = AxialAttention(inplanes, inplanes, kernel_size[0], groups=groups, cuda=cuda)
+        self.width_block = AxialAttention(inplanes, inplanes, kernel_size[1], groups=groups, stride=stride, width=True,
+                                          cuda=cuda)
+        self.conv_up = conv1x1(inplanes, outplanes)
+        self.bn2 = nn.BatchNorm2d(outplanes)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
@@ -113,13 +108,8 @@ class AxialBlock(nn.Module):
     def forward(self, x):
         identity = x
 
-        out = self.conv_down(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-
-        out = self.hight_block(out)
+        out = self.hight_block(x)
         out = self.width_block(out)
-        out = self.relu(out)
 
         out = self.conv_up(out)
         out = self.bn2(out)
@@ -133,23 +123,22 @@ class AxialBlock(nn.Module):
         return out
 
 
-def make_layer(planes, blocks, kernel_size=56, stride=1, inplanes=64, groups=8, base_width=64):
+def make_axial_attention_layer(inplanes, outplanes, blocks, kernel_size, stride=1, groups=8, cuda=True):
     downsample = None
-    if stride != 1 or inplanes != planes * AxialBlock.expansion:
+    if stride != 1 or inplanes != outplanes:
         downsample = nn.Sequential(
-            conv1x1(inplanes, planes * AxialBlock.expansion, stride),
-            nn.BatchNorm2d(planes * AxialBlock.expansion),
+            conv1x1(inplanes, outplanes, stride),
+            nn.BatchNorm2d(outplanes),
         )
 
-    layers = [AxialBlock(inplanes, planes, stride, downsample, groups=groups,
-                         base_width=base_width, kernel_size=kernel_size)]
-    inplanes = planes * AxialBlock.expansion
+    layers = [AxialBlock(inplanes, outplanes, kernel_size, stride, downsample, groups=groups, cuda=cuda)]
+    inplanes = outplanes
     if stride != 1:
-        kernel_size = kernel_size // 2
+        kernel_size[0] = kernel_size[0] // 2
+        kernel_size[1] = kernel_size[1] // 2
 
     for _ in range(1, blocks):
-        layers.append(AxialBlock(inplanes, planes, groups=groups,
-                                 base_width=base_width, kernel_size=kernel_size))
+        layers.append(AxialBlock(inplanes, outplanes, kernel_size, groups=groups, cuda=cuda))
 
     return nn.Sequential(*layers)
 
@@ -157,14 +146,11 @@ def make_layer(planes, blocks, kernel_size=56, stride=1, inplanes=64, groups=8, 
 class Encoder(nn.Module):
     def __init__(self, image_channels=1):
         super(Encoder, self).__init__()
-
-        self.inplanes = 64
-
-        self.conv1 = nn.Conv2d(image_channels, self.inplanes, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(image_channels, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
-        self.bn1 = nn.BatchNorm2d(self.inplanes)
+        self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -175,28 +161,52 @@ class Encoder(nn.Module):
 
 
 class Detector(nn.Module):
-    def __init__(self):
+    def __init__(self, cuda):
         super(Detector, self).__init__()
+        kernel_size = [60, 80]  # depends on image size 240/4 320/4
 
-        self.layer1 = self.make_layer(64, 1, kernel_size=56)
-        self.layer2 = self.make_layer(128, 2, stride=2, kernel_size=56)
-        self.out_layer = self.make_layer(65, 1, stride=2, kernel_size=56)
+        self.layer1 = make_axial_attention_layer(64, 128, 1, kernel_size, cuda=cuda)
+        self.layer2 = make_axial_attention_layer(128, 256, 2, kernel_size, stride=2, cuda=cuda)
+
+        # like a ResNet block
+        self.conv1 = nn.Conv2d(256, 65, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(65)
+        self.conv2 = nn.Conv2d(65, 65, kernel_size=1, stride=1, padding=0, bias=False)
+        self.bn2 = nn.BatchNorm2d(65)
+        self.relu = nn.ReLU()
+
+        self.identity_downsample = nn.Sequential(
+            nn.Conv2d(64, 65, kernel_size=1, stride=2, bias=False),
+            nn.BatchNorm2d(65))
+
+    def forward(self, x):
+        identity = self.identity_downsample(x)
+        out = self.layer1(x)
+        out = self.layer2(out)
+
+        out = self.conv1(out)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        out += identity
+        out = self.relu(out)
+        return out
+
+
+class Descriptor(nn.Module):
+    def __init__(self, cuda):
+        super(Descriptor, self).__init__()
+        kernel_size = [60, 80]  # depends on image size 240/4 320/4
+
+        self.layer1 = make_axial_attention_layer(64, 128, 1, kernel_size, cuda=cuda)
+        self.layer2 = make_axial_attention_layer(128, 256, 2, kernel_size, stride=2, cuda=cuda)
+        self.out_layer = make_axial_attention_layer(256, 128, 2, kernel_size, stride=1, cuda=cuda)
 
     def forward(self, x):
         x = self.layer1(x)
         x = self.layer2(x)
-        x = self.out_layer(x)
-        return x
-
-
-class Descriptor(nn.Module):
-    def __init__(self):
-        super(Descriptor, self).__init__()
-        self.layer1 = self.make_layer(64, 1, kernel_size=56)
-        self.out_layer = self.make_layer(128, 2, stride=2, kernel_size=56)
-
-    def forward(self, x):
-        x = self.layer1(x)
         x = self.out_layer(x)
         return x
 
@@ -208,8 +218,8 @@ class SuperPoint(nn.Module):
         self.is_descriptor_enabled = True  # used to disable descriptor head when training MagicPoint
 
         self.encoder = Encoder()
-        self.detector = Detector()
-        self.descriptor = Descriptor()
+        self.detector = Detector(settings.cuda)
+        self.descriptor = Descriptor(settings.cuda)
 
     def disable_descriptor(self):
         self.is_descriptor_enabled = False
