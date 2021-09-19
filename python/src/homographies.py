@@ -27,13 +27,12 @@ import numpy as np
 import torch
 from scipy.stats import truncnorm
 from torchvision.transforms import functional_tensor
-from kornia.morphology import erosion
 import cv2
 
 
 class HomographyConfig(object):
     def __init__(self):
-        self.num = 100
+        self.num = 10
         self.perspective = True
         self.scaling = True
         self.rotation = True
@@ -188,7 +187,7 @@ def sample_homography(
     a_mat = torch.stack([f(pts1[i], pts2[i]) for i in range(4) for f in (ax, ay)], dim=0)
     p_mat = torch.stack([pts2[i][j] for i in range(4) for j in range(2)]).t()
     p_mat.unsqueeze_(dim=1)
-    x, _ = torch.solve(p_mat, a_mat)
+    x = torch.linalg.solve(a_mat, p_mat)
     homography = x.t()
     return homography.squeeze(dim=0)
 
@@ -237,6 +236,17 @@ def homographic_augmentation(image, points, config):
     return warped_image, warped_points, valid_mask, homography
 
 
+def erode(image, erosion_radius):
+    orig_device = image.device
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (erosion_radius * 2,) * 2)
+    image = image.cpu().numpy().transpose([1, 2, 0])  # adapt channels for OpenCV format
+    image = cv2.erode(image, kernel, iterations=1, borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    image = np.expand_dims(image, axis=0)  # restore torch image format
+    image = torch.from_numpy(image)
+    image = image.to(device=orig_device)
+    return image
+
+
 def homography_adaptation(image, net, config):
     """ Performs homography adaptation.
     Inference using multiple random warped patches of the same input image for robust
@@ -279,16 +289,8 @@ def homography_adaptation(image, net, config):
                                         H, interpolation='nearest')
             # Ignore the detections too close to the border to avoid artifacts
             if config.valid_border_margin != 0:
-                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (config.valid_border_margin * 2,) * 2)
-                kernel = torch.from_numpy(kernel)
-                kernel = kernel.to(dtype=torch.int32, device=image.device)
-                # image should be WxCxHxW
-                count.unsqueeze_(dim=0)
-                count = erosion(count, kernel)
-                count.squeeze_(dim=0)  # remove batch dim
-                mask.unsqueeze_(dim=0)
-                mask = erosion(mask, kernel)
-                mask.squeeze_(dim=0)  # remove batch dim
+                count = erode(count, config.valid_border_margin)
+                mask = erode(mask, config.valid_border_margin)
 
             # Predict detection probabilities
             warped_prob, _, _ = net(warped)
@@ -338,11 +340,7 @@ def compute_valid_mask(image_shape, homography, erosion_radius=0):
         mask.unsqueeze_(dim=0)
     mask = homography_transform(mask, homography, interpolation='nearest')
     if erosion_radius > 0:
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (erosion_radius * 2,) * 2)
-        mask = mask.numpy().transpose([1, 2, 0])  # adapt channels for OpenCV format
-        mask = cv2.erode(mask, kernel, iterations=1, borderType=cv2.BORDER_CONSTANT, borderValue=0)
-        mask = np.expand_dims(mask, axis=0)  # restore torch image format
-        mask = torch.from_numpy(mask)
+        mask = erode(mask, erosion_radius)
     return mask.to(dtype=torch.int32)
 
 
