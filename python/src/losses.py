@@ -24,6 +24,7 @@
 import torch
 from torch.nn.functional import log_softmax, normalize, relu
 from src.homographies import warp_points
+import torch.nn.functional as nn_f
 
 
 def masked_cross_entropy(logits, targets, mask):
@@ -101,19 +102,20 @@ class GlobalLoss(object):
                 valid_mask):
         # Compute the losses for the detector head
         detector_loss_value = self.detector_loss.forward(points, true_points, valid_mask=None)
-        warped_detector_loss_value = self.detector_loss.forward(
-            warped_points, warped_true_points,
-            valid_mask)
+        warped_detector_loss_value = self.detector_loss.forward(warped_points, warped_true_points, valid_mask)
 
         # Compute the loss for the descriptor head
-        # descriptor_loss_value = self.descriptor_loss(
-        #     descriptors, warped_descriptors, homographies, valid_mask, self.settings.cell,
-        #     lambda_d=self.settings.lambda_d, positive_margin=self.settings.positive_margin,
-        #     negative_margin=self.settings.negative_margin)
-        descriptor_loss_value = self.descriptor_loss_mse(descriptors, warped_descriptors, valid_mask)
+        # this loss also maximize distance between non corresponding descriptors
+        descriptor_loss_value = self.descriptor_loss(
+            descriptors, warped_descriptors, homographies, valid_mask, self.settings.cell,
+            lambda_d=self.settings.lambda_d, positive_margin=self.settings.positive_margin,
+            negative_margin=self.settings.negative_margin)
 
-        loss = (detector_loss_value + warped_detector_loss_value) + descriptor_loss_value
-        return loss
+        # descriptor_loss_value = self.descriptor_distance_loss(descriptors, warped_descriptors, homographies,
+        #                                                       self.settings.cell, valid_mask)
+
+        # loss = (detector_loss_value + warped_detector_loss_value) + descriptor_loss_value
+        return [detector_loss_value, warped_detector_loss_value, descriptor_loss_value]
 
     def __call__(self, points,
                  true_points,
@@ -132,26 +134,60 @@ class GlobalLoss(object):
                             homographies,
                             valid_mask)
 
-    def descriptor_loss_mse(self, descriptors, warped_descriptors, valid_mask):
+    def descriptor_distance_loss(self, descriptors, warped_descriptors, homographies, cell_size, valid_mask):
         # Compute the position of the center pixel of every cell in the image
         batch_size = descriptors.shape[0]
         hc = descriptors.shape[2]
         wc = descriptors.shape[3]
 
-        # Normalize the descriptors and
-        descriptors = normalize(descriptors, dim=1, p=2)
-        warped_descriptors = normalize(warped_descriptors, dim=1, p=2)
+        # compare only similar descriptors - use homography transform to find correspondences
+        coord_cells = torch.stack(torch.meshgrid(torch.arange(0, hc), torch.arange(0, wc)), dim=-1)
+        coord_cells = coord_cells.to(device=descriptors.device)
+        coord_cells = coord_cells * cell_size + cell_size // 2
 
-        # Compute the loss
+        # resulting cells after mask filtration
+        coord_cells = coord_cells.view([-1, 2])
+
+        # Compute the positions of the warped cells
+        warped_coord_cells = warp_points(coord_cells, homographies)
+        coord_cells = coord_cells.repeat(batch_size, 1, 1)
+
+        # Filter points laying out of the image shape
+        shape_tensor = torch.tensor([hc * cell_size, wc * cell_size], dtype=torch.float, device=descriptors.device) - 1
+        warp_mask = (warped_coord_cells < 0) | (warped_coord_cells > shape_tensor)
+        warp_mask = torch.any(warp_mask, dim=2)
+        outlier_num = warp_mask.sum()
+
+        # restore cell coords
+        coord_cells = (coord_cells - cell_size // 2) / cell_size
+        warped_coord_cells = (warped_coord_cells - cell_size // 2) / cell_size
+
+        # [0,0] - cell descriptor will be used for outliers
+        coord_cells[warp_mask] = 0
+        warped_coord_cells[warp_mask] = 0
+        coord_cells = coord_cells.to(dtype=torch.long)
+        warped_coord_cells = warped_coord_cells.to(dtype=torch.long)
+
+        # Select correspondent descriptors
+        batch_index = torch.arange(batch_size, dtype=torch.long)[:, None]
+        descriptors = descriptors[batch_index, :, coord_cells[:, :, 0], coord_cells[:, :, 1]]
+        warped_descriptors = warped_descriptors[batch_index, :, warped_coord_cells[:, :, 0], warped_coord_cells[:, :, 1]]
+
+        # calculate correction for outliers
+        descriptors[warp_mask] = 0
+        warped_descriptors[warp_mask] = 0
+
+        # Compute the Cosine Similarity loss
+        # loss = nn_f.cosine_similarity(descriptors, warped_descriptors, dim=2)
+        # loss = nn_f.cosine_embedding_loss(descriptors, warped_descriptors)
+
+        # Normalize the descriptors
+        # descriptors = normalize(descriptors, dim=1, p=2)
+        # warped_descriptors = normalize(warped_descriptors, dim=1, p=2)
+
+        # Compute the MSE loss
         loss = (descriptors - warped_descriptors) ** 2
-        loss = torch.mean(loss, dim=1)
-
-        # Mask the pixels if bordering artifacts appear
-        valid_mask = torch.ones([batch_size, hc, wc], dtype=torch.float32) if valid_mask is None else valid_mask
-        valid_mask = torch.reshape(valid_mask, [batch_size, hc, wc])
-
-        normalization = torch.sum(valid_mask) * float(hc * wc)
-        loss = torch.sum(valid_mask * loss) / normalization
+        loss = loss.sum() / (torch.numel(loss) - outlier_num)
 
         return loss
 

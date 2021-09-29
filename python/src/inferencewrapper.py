@@ -16,7 +16,8 @@ class InferenceWrapper(object):
         self.settings = settings
 
         self.net = SuperPoint(self.settings)
-        load_checkpoint_for_inference(weights_path, self.net)
+        if not load_checkpoint_for_inference(weights_path, self.net):
+            exit(1)
 
         if settings.cuda:
             self.net = self.net.cuda()
