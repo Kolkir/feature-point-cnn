@@ -28,8 +28,6 @@ class Camera(object):
             print('Camera failed to capture a frame')
             return None, False
 
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
         frame = frame.astype('float32') / 255.0
 
         return frame, True

@@ -35,6 +35,7 @@ def show_data(name, image, point_labels, color, settings):
     original_img = image.permute(1, 2, 0).data.cpu()
     original_img = original_img.numpy()
     original_img = cv2.UMat(original_img)
+    original_img = cv2.cvtColor(original_img, cv2.COLOR_RGB2BGR)
     draw_points(original_img, points, color=color)
     cv2.imshow(name, original_img)
 

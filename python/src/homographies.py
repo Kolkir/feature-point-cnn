@@ -32,7 +32,7 @@ import cv2
 
 class HomographyConfig(object):
     def __init__(self):
-        self.num = 10
+        self.num = 15
         self.perspective = True
         self.scaling = True
         self.rotation = True
@@ -272,7 +272,6 @@ def homography_adaptation(image, net, config):
 
     def step(probs, counts):
         with torch.no_grad():
-            # Sample image patch
             H = sample_homography(shape, perspective=config.perspective, scaling=config.scaling,
                                   rotation=config.rotation,
                                   translation=config.translation, n_scales=config.n_scales, n_angles=config.n_angles,

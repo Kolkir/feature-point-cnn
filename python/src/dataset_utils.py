@@ -14,6 +14,11 @@ def read_dataset_item(file_name, transforms=None):
     if len(image.shape) < 3:
         # add missed channel dimension
         image = np.expand_dims(image, axis=0)
+
+    # make image color
+    if image.shape[0] == 1:
+        image = np.repeat(image, 3, axis=0)
+
     if image.dtype == np.uint8:
         image = image.astype(np.float32) / 255.
 

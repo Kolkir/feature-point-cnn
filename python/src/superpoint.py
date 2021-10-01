@@ -1,13 +1,12 @@
 import torch
 from torch import nn
 
-from src.attention_blocks import make_axial_attention_layer
 from src.netutils import restore_prob_map
 from src.resnet_blocks import make_resnet_layers
 
 
 class Encoder(nn.Module):
-    def __init__(self, cuda, image_channels=1):
+    def __init__(self, image_channels=3):
         super(Encoder, self).__init__()
 
         self.conv1 = nn.Conv2d(image_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -38,26 +37,27 @@ class Detector(nn.Module):
 
 
 class Descriptor(nn.Module):
-    def __init__(self, cuda, use_attention=False):
+    def __init__(self):
         super(Descriptor, self).__init__()
 
-        if use_attention:
-            kernel_size = [30, 40]  # depends on image size 240/4 320/4
-            self.layer = make_axial_attention_layer(128, 256, 2, kernel_size, stride=1, cuda=cuda)
-            self.out_layer = make_resnet_layers(num_residual_blocks=2, in_channels=256, intermediate_channels=128,
-                                                stride=1)
-        else:
-            self.layer = make_resnet_layers(num_residual_blocks=1, in_channels=128, intermediate_channels=256,
+        self.layer_in = make_resnet_layers(num_residual_blocks=2, in_channels=128, intermediate_channels=256,
+                                           stride=2)
+        self.up_sample = nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.relu = nn.ReLU()
+        self.bn = nn.BatchNorm2d(128)
+
+        self.layer_out = make_resnet_layers(num_residual_blocks=2, in_channels=256, intermediate_channels=128,
                                             stride=1)
-            self.out_layer = nn.Sequential(
-                nn.Dropout2d(0.25),
-                nn.Conv2d(256, 128, kernel_size=1, stride=1, padding=0, bias=False),
-                nn.ReLU()
-            )
 
     def forward(self, image, feature_embeddings):
-        out = self.layer(image)
-        out = self.out_layer(out)
+        out = self.layer_in(image)
+
+        out = self.up_sample(out)
+        out = self.bn(out)
+        out = self.relu(out)
+
+        out = torch.cat([out, feature_embeddings], dim=1)
+        out = self.layer_out(out)
         return out
 
 
@@ -67,9 +67,9 @@ class SuperPoint(nn.Module):
         self.settings = settings
         self.is_descriptor_enabled = True  # used to disable descriptor head when training MagicPoint
 
-        self.encoder = Encoder(settings.cuda)
+        self.encoder = Encoder()
         self.detector = Detector()
-        self.descriptor = Descriptor(settings.cuda)
+        self.descriptor = Descriptor()
 
     def disable_descriptor(self):
         self.is_descriptor_enabled = False

@@ -26,7 +26,7 @@ class InferenceWrapper(object):
         self.net.eval()
         # torchsummary.summary(self.net, (1, 240, 320), device='cuda' if settings.cuda else 'cpu')
 
-    def run(self, img, do_homography_adaptation=False):
+    def run(self, img):
         with torch.no_grad():
             """ Process a image to extract points and descriptors.
             Input
@@ -38,12 +38,12 @@ class InferenceWrapper(object):
             input_tensor = self.prepare_input(img)
             img_h, img_w = input_tensor.shape[2], input_tensor.shape[3]
 
-            point_prob_map, descriptors_map, logits = self.net.forward(input_tensor)
+            point_prob_map, descriptors_map, _ = self.net(input_tensor)
 
             points = get_points(point_prob_map, img_h, img_w, self.settings)
             descriptors = get_descriptors(points, descriptors_map, img_h, img_w, self.settings)
 
-            return points, descriptors, logits
+            return points, descriptors
 
     def run_with_homography_adaptation(self, img, config):
         with torch.no_grad():
@@ -69,18 +69,15 @@ class InferenceWrapper(object):
 
     def prepare_input(self, img):
         if not torch.is_tensor(img):
-            assert img.ndim == 2, 'Image must be grayscale.'
+            assert img.ndim == 3
             assert img.dtype == np.float32, 'Image must be float32.'
-            img_h, img_w = img.shape[0], img.shape[1]
+            assert img.shape[2] == 3, 'Image must be rgb.'
             input_tensor = img.copy()
-            input_tensor = input_tensor.reshape(1, img_h, img_w)
+            input_tensor = input_tensor.transpose((2, 0, 1))
             input_tensor = torch.from_numpy(input_tensor)
-            img_h, img_w = img.shape[0], img.shape[1]
-            input_tensor = input_tensor.view(1, 1, img_h, img_w)
+            input_tensor = input_tensor.unsqueeze(0)
         else:
             input_tensor = img
-        if self.settings.cuda:
-            input_tensor = input_tensor.cuda()
         return input_tensor
 
     def trace(self, img, out_file_name):

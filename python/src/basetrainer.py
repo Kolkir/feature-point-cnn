@@ -51,7 +51,7 @@ class BaseTrainer(object):
         self.f1_metric = torchmetrics.F1(num_classes=65, mdmc_average='samplewise')
 
     def add_model_graph(self, model):
-        fake_input = torch.ones((1, 1, self.settings.train_image_size[0], self.settings.train_image_size[1]),
+        fake_input = torch.ones((1, 3, self.settings.train_image_size[0], self.settings.train_image_size[1]),
                                 dtype=torch.float32)
         if self.settings.cuda:
             fake_input = fake_input.cuda()
@@ -80,15 +80,17 @@ class BaseTrainer(object):
         true_prob_map = make_prob_map_from_labels(labels[0, :, :].cpu().numpy(), img_h, img_w,
                                                   self.settings.cell)
         true_points = get_points(true_prob_map[0, :, :].unsqueeze(dim=0), img_h, img_w, self.settings)
-        frame = image[0, 0, :, :].cpu().numpy()
-        res_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
+        frame = image[0, :, :, :].cpu().numpy()
+        res_img = (frame * 255.).astype('uint8')
+        res_img = np.transpose(res_img, [1, 2, 0])  # OpenCV format
+        res_img = cv2.UMat(res_img)
         for point in points.T:
             point_int = (int(round(point[0])), int(round(point[1])))
             cv2.circle(res_img, point_int, 3, (255, 0, 0), -1, lineType=16)
         for point in true_points.T:
             point_int = (int(round(point[0])), int(round(point[1])))
             cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
-        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]),
+        self.summary_writer.add_image(f'Detector {name} result/train', res_img.get().transpose([2, 0, 1]),
                                       self.global_train_index)
 
     def train_loop(self):
@@ -239,6 +241,7 @@ class BaseTrainer(object):
 
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch}\n-------------------------------")
+            self.model.train()
             train_loss = self.train_loop()
             print(f"Train Loss:{train_loss:7f} \n")
             if self.settings.write_statistics:
@@ -247,6 +250,7 @@ class BaseTrainer(object):
             self.f1 = 0
             self.last_image = None
             self.last_prob_map = None
+            self.model.eval()
             test_loss, batches_num = self.test_loop()
             self.f1 /= batches_num
 

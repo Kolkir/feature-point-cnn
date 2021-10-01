@@ -21,7 +21,7 @@ class CocoPreprocessDataset(Dataset):
 
     def __getitem__(self, index):
         image_path = self.items[index]
-        img = torchvision.io.image.read_image(str(image_path), mode=torchvision.io.image.ImageReadMode.GRAY)
+        img = torchvision.io.image.read_image(str(image_path), mode=torchvision.io.image.ImageReadMode.RGB)
         img = img.float().div(255)
         # ratio preserving resize
         _, img_h, img_w = img.shape
