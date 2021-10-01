@@ -15,7 +15,7 @@ class SuperPointTrainer(BaseTrainer):
     def train_init(self, check_point_loaded):
         if not check_point_loaded:
             # preload the MagicPoint state
-            load_checkpoint_for_inference(self.magic_point_weights, self.model)
+            load_checkpoint_for_inference(self.magic_point_weights, self.model, ignore_missed=True)
             self.model.enable_descriptor()
             self.model.initialize_descriptor()
 

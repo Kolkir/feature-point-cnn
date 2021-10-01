@@ -13,7 +13,7 @@ def draw_points(image, points, color):
 
 def test_synthetic(path):
     settings = SuperPointSettings()
-    dataset = SyntheticDataset(path, settings, 'training')
+    dataset = SyntheticDataset(path, settings, 'train')
     for item in dataset:
         image, point_labels = item
         show_data('Original', image, point_labels, (255, 255, 255), settings)

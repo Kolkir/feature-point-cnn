@@ -8,7 +8,7 @@ from src.inferencewrapper import InferenceWrapper
 
 
 def run_inference(opt, settings):
-    camera = Camera(opt.camid, opt.W, opt.H)
+    camera = Camera(opt.camid)
     print('Loading pre-trained network...')
     net = InferenceWrapper(weights_path=opt.weights_path, settings=settings)
     print('Successfully loaded pre-trained network.')
@@ -25,14 +25,19 @@ def run_inference(opt, settings):
         if do_blur:
             frame = cv2.blur(frame, (3, 3))
         if ret:
-            new_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
-            features = get_features(frame, net)
+            img_size = (opt.W, opt.H)
+            new_img = frame * 255
+            new_img = np.ascontiguousarray(new_img, dtype=np.uint8)
+
+            query_img = make_query_image(frame, img_size)
+
+            features = get_features(query_img, net)
             if stop_features is None:
-                draw_features(features, new_img)
+                draw_features(features, new_img, img_size)
                 stop_img = new_img
             else:
-                correspondences, indices,  = get_best_correspondences(stop_features, features)
-                draw_features(correspondences, new_img, indices)
+                correspondences, indices, = get_best_correspondences(stop_features, features)
+                draw_features(correspondences, new_img, img_size, indices)
 
             # combine images
             res_img = np.hstack((stop_img, new_img))
@@ -50,14 +55,13 @@ def run_inference(opt, settings):
                 print('Quitting, \'q\' pressed.')
                 break
             if key == ord('s'):
-                n = 20  # top 20 features
-                stop_features = features[0:n, :]
-                stop_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
-                draw_features(stop_features, stop_img)
+                stop_features = features
+                stop_img = (frame * 255.).astype('uint8')
+                draw_features(stop_features, stop_img, img_size)
             if key == ord('b'):
                 do_blur = not do_blur
             if key == ord('t'):
-                net.trace(frame, opt.out_file_name)
+                # net.trace(frame, opt.out_file_name)
                 print('Model saved, \'t\' pressed.')
         else:
             break
@@ -65,46 +69,38 @@ def run_inference(opt, settings):
     cv2.destroyAllWindows()
 
 
-def get_correspondences(stop_features, features, dist_thresh=0.1):
-    correspondence = []
-    for stop_feature in stop_features:
-        for feature in features:
-            a = stop_feature[3:]
-            b = feature[3:]
-            dist = np.linalg.norm(a - b, ord=2)
-            if dist <= dist_thresh:
-                correspondence.append(feature)
-    return correspondence
+def make_query_image(frame, img_size):
+    # ratio preserving resize
+    img_h, img_w, _ = frame.shape
+    scale_h = img_size[1] / img_h
+    scale_w = img_size[0] / img_w
+    scale_max = max(scale_h, scale_w)
+    new_size = [int(img_w * scale_max), int(img_h * scale_max)]
+    query_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    query_img = cv2.resize(query_img, new_size, interpolation=cv2.INTER_LINEAR)
+    # center crop
+    x = new_size[0] // 2 - img_size[0] // 2
+    y = new_size[1] // 2 - img_size[1] // 2
+    query_img = query_img[y:y + img_size[1], x:x + img_size[0]]
+    return query_img
 
 
 def get_best_correspondences(stop_features, features):
-    correspondences = []
-    indices = []
-    for stop_index, stop_feature in enumerate(stop_features):
-        min_dist = 0.00008
-        min_index = -1
-        a = stop_feature[3:]
-        a = a / np.linalg.norm(a)
-        for new_index, feature in enumerate(features):
-            b = feature[3:]
-            b = b / np.linalg.norm(b)
-            dist = (a - b) ** 2
-            dist = np.mean(dist)
-            if dist <= min_dist:
-                min_dist = dist
-                min_index = new_index
-        if min_index >= 0:
-            correspondences.append(features[min_index])
-            indices.append(stop_index)
+    bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
+    matches = bf.match(queryDescriptors=features[:, 3:].astype(np.float32),
+                       trainDescriptors=stop_features[:, 3:].astype(np.float32))
+    matches_idx = np.array([m.queryIdx for m in matches])
+
+    correspondences = np.array([features[idx] for idx in matches_idx])
+    indices = np.array([m.trainIdx for m in matches])
     return correspondences, indices
 
 
 def get_features(frame, net):
-    points, descriptors, _ = net.run(frame)
+    points, descriptors = net.run(frame)
     points = points.T
     descriptors = descriptors.T
     points = np.hstack((points, descriptors))
-    points = points[points[:, 2].argsort()[::-1]]  # sort by increasing the confidence level
     return points
 
 
@@ -114,10 +110,13 @@ def draw_fps(time_diff, image):
     cv2.putText(image, fps_str, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (200, 200, 200), 2, cv2.LINE_AA)
 
 
-def draw_features(features, image, indices=None):
+def draw_features(features, image, img_size, indices=None):
     if indices is None:
         indices = range(len(features))
+    sx = image.shape[1] / img_size[0]
+    sy = image.shape[0] / img_size[1]
     for i, point in zip(indices, features):
-        point_int = (int(round(point[0])), int(round(point[1])))
+        point_int = (int(round(point[0] * sx)), int(round(point[1] * sy)))
         cv2.circle(image, point_int, 2, (0, 255, 0), -1, lineType=16)
-        cv2.putText(image, str(i), point_int, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+        cv2.putText(image, str(i), point_int, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 255, 100), 1, cv2.LINE_AA)
+

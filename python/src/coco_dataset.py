@@ -2,10 +2,10 @@ import torch
 from torch.utils.data import Dataset
 import os
 from pathlib import Path
-import numpy as np
 from numpy.random import default_rng
 
 from src.dataset_transforms import dataset_transforms
+from src.dataset_utils import read_dataset_item
 from src.homographies import homographic_augmentation, HomographyConfig
 from src.netutils import make_points_labels, scale_valid_map
 
@@ -26,28 +26,7 @@ class CocoDataset(Dataset):
 
     def __getitem__(self, index):
         file_name = self.items[index]
-        try:
-            item_data = np.load(file_name)
-        except Exception as e:
-            print(f'CocoDataset failed to load file {file_name}')
-            raise
-
-        if self.do_augmentation:
-            image = item_data['image'] * 255
-            image = image.astype(np.uint8)
-            image = image.transpose([1, 2, 0])
-            augmented_image = self.transforms(image=image)
-            image = augmented_image['image'].float() / 255.
-        else:
-            image = torch.from_numpy(item_data['image'])
-
-        points = torch.from_numpy(item_data['points'])
-
-        # take only coordinates
-        points = points[:2, :]
-        points = torch.transpose(points, 1, 0)
-        # swap x and y columns
-        points[:, [0, 1]] = points[:, [1, 0]]
+        image, points = read_dataset_item(file_name, self.transforms if self.do_augmentation else None)
 
         warped_image, warped_points, valid_mask, homography = homographic_augmentation(image.unsqueeze(0), points,
                                                                                        self.homography_config)
@@ -56,7 +35,7 @@ class CocoDataset(Dataset):
         point_labels = make_points_labels(points.numpy(), img_h, img_w, self.settings.cell)
         warped_point_labels = make_points_labels(warped_points.numpy(), img_h, img_w, self.settings.cell)
         valid_mask = scale_valid_map(valid_mask, img_h, img_w, self.settings.cell)
-        
+
         return image, torch.from_numpy(point_labels), warped_image.squeeze(dim=0), torch.from_numpy(
             warped_point_labels), valid_mask, homography
 

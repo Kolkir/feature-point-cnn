@@ -4,7 +4,8 @@ import torch
 import cv2
 import torchvision
 
-from src.homographies import HomographyConfig, homographic_augmentation, invert_homography, homography_transform
+from src.homographies import HomographyConfig, homographic_augmentation, invert_homography, homography_transform, \
+    warp_points, filter_points, flat2mat, mat2flat
 from src.netutils import make_points_labels, make_prob_map_from_labels, get_points
 from src.settings import SuperPointSettings
 
@@ -26,8 +27,22 @@ def test_homography(image):
 
     # Sample random homography transform and apply transformation
     homography_config = HomographyConfig()
-    warped_image, warped_points, valid_mask, homography = homographic_augmentation(image, points, homography_config)
+
+    homographies = []
+    batch_size = 8
+    for _ in range(batch_size):
+        warped_image, warped_points, valid_mask, homography = homographic_augmentation(image, points, homography_config)
+        homographies.append(homography)
+    homographies = torch.stack(homographies)
+    homography = homographies[batch_size - 1]
+
+    warped_points = warp_points(points, homographies)
+    if batch_size > 1:
+        warped_points = warped_points[batch_size-1]
+    warped_points = filter_points(warped_points, [image.shape[2], image.shape[3]])
+
     points = points.numpy()
+    assert (torch.numel(warped_points) > 0)
     warped_points = warped_points.numpy()
 
     # Test prob maps
@@ -65,11 +80,13 @@ def test_homography(image):
     cv2.imshow("Restored image", restored_img)
     cv2.imshow("Mask", mask_img)
 
-    key = cv2.waitKey(delay=0)
-
 
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         img = torchvision.io.image.read_image(sys.argv[1])
         img.unsqueeze_(dim=0)  # add batch size
-        test_homography(img)
+        while True:
+            test_homography(img)
+            key = cv2.waitKey(delay=0)
+            if key == ord('q'):
+                break

@@ -1,91 +1,64 @@
 import torch
 from torch import nn
+
 from src.netutils import restore_prob_map
-
-
-class ResNetBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, identity_downsample=None, stride=1):
-        super(ResNetBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU()
-        self.identity_downsample = identity_downsample
-
-    def forward(self, x):
-        identity = x
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.conv2(x)
-        x = self.bn2(x)
-
-        if self.identity_downsample is not None:
-            identity = self.identity_downsample(identity)
-
-        x += identity
-        x = self.relu(x)
-        return x
-
-
-def make_layers(num_residual_blocks, in_channels, intermediate_channels, stride):
-    layers = []
-
-    identity_downsample = nn.Sequential(
-        nn.Conv2d(in_channels, intermediate_channels, kernel_size=1, stride=stride, bias=False),
-        nn.BatchNorm2d(intermediate_channels))
-    layers.append(ResNetBlock(in_channels, intermediate_channels, identity_downsample, stride))
-
-    for i in range(num_residual_blocks - 1):
-        layers.append(ResNetBlock(intermediate_channels, intermediate_channels))
-
-    return nn.Sequential(*layers)
+from src.resnet_blocks import make_resnet_layers
 
 
 class Encoder(nn.Module):
-    def __init__(self, image_channels=1):
+    def __init__(self, image_channels=3):
         super(Encoder, self).__init__()
 
         self.conv1 = nn.Conv2d(image_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU()
         self.max_pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.layer1 = make_resnet_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=64, stride=1)
+        self.layer2 = make_resnet_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=128, stride=2)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.max_pool(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
         return x
 
 
 class Detector(nn.Module):
     def __init__(self):
         super(Detector, self).__init__()
-        # ResNetLayers
-        self.layer1 = make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=64, stride=1)
-        self.layer2 = make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=128, stride=2)
-        self.out_layer = make_layers(num_residual_blocks=2, in_channels=128, intermediate_channels=65, stride=1)
+        self.layer = make_resnet_layers(num_residual_blocks=2, in_channels=128, intermediate_channels=65, stride=1)
 
     def forward(self, x):
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.out_layer(x)
-        return x
+        out = self.layer(x)
+        return out, x
 
 
 class Descriptor(nn.Module):
     def __init__(self):
         super(Descriptor, self).__init__()
-        # ResNetLayers
-        self.layer1 = make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=64, stride=1)
-        self.out_layer = make_layers(num_residual_blocks=2, in_channels=64, intermediate_channels=128, stride=2)
 
-    def forward(self, x):
-        x = self.layer1(x)
-        x = self.out_layer(x)
-        return x
+        self.layer_in = make_resnet_layers(num_residual_blocks=2, in_channels=128, intermediate_channels=256,
+                                           stride=2)
+        self.up_sample = nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.relu = nn.ReLU()
+        self.bn = nn.BatchNorm2d(128)
+
+        self.layer_out = make_resnet_layers(num_residual_blocks=2, in_channels=256, intermediate_channels=128,
+                                            stride=1)
+
+    def forward(self, image, feature_embeddings):
+        out = self.layer_in(image)
+
+        out = self.up_sample(out)
+        out = self.bn(out)
+        out = self.relu(out)
+
+        out = torch.cat([out, feature_embeddings], dim=1)
+        out = self.layer_out(out)
+        return out
 
 
 class SuperPoint(nn.Module):
@@ -126,12 +99,12 @@ class SuperPoint(nn.Module):
             image = image.cuda()
 
         image = self.encoder(image)
-        prob = self.detector(image)
+        prob, embeddings = self.detector(image)
         if self.is_descriptor_enabled:
-            desc = self.descriptor(image)
+            desc = self.descriptor(image, embeddings)
         else:
             shape = prob.shape
-            desc = torch.zeros((shape[0], 256, shape[2], shape[3]))
+            desc = torch.zeros((shape[0], 128, shape[2], shape[3]))
             if self.settings.cuda:
                 desc = desc.cuda()
 

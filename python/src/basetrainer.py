@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
-from src.scheduler import Scheduler
 from src.netutils import get_points, make_prob_map_from_labels, make_points_labels
 from src.saveutils import load_last_checkpoint, save_checkpoint
 
@@ -23,7 +22,7 @@ class BaseTrainer(object):
         if self.settings.write_statistics:
             self.summary_writer = SummaryWriter(log_dir=os.path.join(checkpoint_path, 'runs'))
         self.optimizer = None
-        self.scheduler = None
+        # self.scheduler = None
         self.f1 = 0
         self.global_train_index = 0
         self.last_image = None
@@ -52,7 +51,7 @@ class BaseTrainer(object):
         self.f1_metric = torchmetrics.F1(num_classes=65, mdmc_average='samplewise')
 
     def add_model_graph(self, model):
-        fake_input = torch.ones((1, 1, self.settings.train_image_size[0], self.settings.train_image_size[1]),
+        fake_input = torch.ones((1, 3, self.settings.train_image_size[0], self.settings.train_image_size[1]),
                                 dtype=torch.float32)
         if self.settings.cuda:
             fake_input = fake_input.cuda()
@@ -81,19 +80,23 @@ class BaseTrainer(object):
         true_prob_map = make_prob_map_from_labels(labels[0, :, :].cpu().numpy(), img_h, img_w,
                                                   self.settings.cell)
         true_points = get_points(true_prob_map[0, :, :].unsqueeze(dim=0), img_h, img_w, self.settings)
-        frame = image[0, 0, :, :].cpu().numpy()
-        res_img = (np.dstack((frame, frame, frame)) * 255.).astype('uint8')
+        frame = image[0, :, :, :].cpu().numpy()
+        res_img = (frame * 255.).astype('uint8')
+        res_img = np.transpose(res_img, [1, 2, 0])  # OpenCV format
+        res_img = cv2.UMat(res_img)
         for point in points.T:
             point_int = (int(round(point[0])), int(round(point[1])))
             cv2.circle(res_img, point_int, 3, (255, 0, 0), -1, lineType=16)
         for point in true_points.T:
             point_int = (int(round(point[0])), int(round(point[1])))
             cv2.circle(res_img, point_int, 1, (0, 255, 0), -1, lineType=16)
-        self.summary_writer.add_image(f'Detector {name} result/train', res_img.transpose([2, 0, 1]),
+        self.summary_writer.add_image(f'Detector {name} result/train', res_img.get().transpose([2, 0, 1]),
                                       self.global_train_index)
 
     def train_loop(self):
-        train_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
+        train_total_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
+        train_detector_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
+        train_descriptor_loss = torch.tensor(0., device='cuda' if self.settings.cuda else 'cpu')
         divider = torch.tensor(self.settings.batch_size_divider, device='cuda' if self.settings.cuda else 'cpu')
         real_batch_index = 0
         progress_bar = tqdm(self.train_dataloader)
@@ -101,36 +104,51 @@ class BaseTrainer(object):
             with torch.set_grad_enabled(True):
                 if self.settings.use_amp:
                     with torch.cuda.amp.autocast():
-                        loss = self.train_loss_fn(*batch)
+                        losses = self.train_loss_fn(*batch)
                         # normalize loss to account for batch accumulation
-                        loss /= divider
-                        train_loss += loss
+                        for loss in losses:
+                            loss /= divider
+                        loss = torch.stack(losses).sum()
 
                     # Scales the loss, and calls backward()
                     # to create scaled gradients
                     self.scaler.scale(loss).backward()
+                    train_total_loss += loss.detach()
+                    if len(losses) == 3:
+                        train_detector_loss += (losses[0] + losses[1]).detach()
+                        train_descriptor_loss += losses[2].detach()
                 else:
-                    loss = self.train_loss_fn(*batch)
+                    losses = self.train_loss_fn(*batch)
                     # normalize loss to account for batch accumulation
-                    loss /= divider
-                    train_loss += loss
+                    for loss in losses:
+                        loss /= divider
+                    loss = torch.stack(losses).sum()
                     loss.backward()
+                    train_total_loss += loss.detach()
+                    if len(losses) == 3:
+                        train_detector_loss += (losses[0] + losses[1]).detach()
+                        train_descriptor_loss += losses[2].detach()
 
                 # gradient accumulation
                 if ((batch_index + 1) % self.settings.batch_size_divider == 0) or (
                         batch_index + 1 == len(self.train_dataloader)):
 
-                    current_loss = train_loss / real_batch_index
+                    current_total_loss = train_total_loss / real_batch_index
+                    current_detector_loss = train_detector_loss / real_batch_index
+                    current_descriptor_loss = train_descriptor_loss / real_batch_index
 
                     # save statistics
                     if self.settings.write_statistics:
                         self.write_batch_statistics(real_batch_index)
 
-                    # self.scheduler.step(real_batch_index, batch_loss)
-                    self.scheduler.step()
+                    # self.scheduler.step(current_total_loss)
                     if (real_batch_index + 1) % 10 == 0:
+                        cur_lr = [group['lr'] for group in self.optimizer.param_groups]
                         progress_bar.set_postfix(
-                            {'Loss': current_loss.item(), 'Learning rate': self.scheduler.get_last_lr()})
+                            {'Total loss': current_total_loss.item(),
+                             'Detect loss': current_detector_loss.item(),
+                             'Desc loss': current_descriptor_loss.item(),
+                             'Learning rate': cur_lr})
 
                     # Optimizer step - apply gradients
                     if self.settings.use_amp:
@@ -150,7 +168,7 @@ class BaseTrainer(object):
                     self.global_train_index += 1
                     real_batch_index += 1
 
-        train_loss = train_loss.item() / real_batch_index
+        train_loss = train_total_loss.item() / real_batch_index
         return train_loss
 
     def test_loop(self):
@@ -158,7 +176,8 @@ class BaseTrainer(object):
         batches_num = 0
         with torch.no_grad():
             for batch_index, batch in enumerate(tqdm(self.test_dataloader)):
-                loss_value, logits = self.test_loss_fn(*batch)
+                losses, logits = self.test_loss_fn(*batch)
+                loss_value = torch.stack(losses).sum()
 
                 softmax_result = self.softmax(logits)
                 # normalize metric to account for batch accumulation
@@ -195,11 +214,10 @@ class BaseTrainer(object):
             betas=(self.settings.optimizer_beta1, self.settings.optimizer_beta2),
             eps=self.settings.optimizer_eps,
         )
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
-                                                                              T_0=self.settings.scheduler_sin_range,
-                                                                              T_mult=1)
-        # self.scheduler = Scheduler(self.optimizer, lr=self.settings.learning_rate, gamma=0.9, update_steps=100,
-        #                            plateau_steps=3)
+        # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer,
+        #                                                                      T_0=self.settings.scheduler_sin_range,
+        #                                                                      T_mult=1)
+        # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer)
 
     def train(self, name, model):
         self.model = model
@@ -223,6 +241,7 @@ class BaseTrainer(object):
 
         for epoch in range(start_epoch, epochs_num):
             print(f"Epoch {epoch}\n-------------------------------")
+            self.model.train()
             train_loss = self.train_loop()
             print(f"Train Loss:{train_loss:7f} \n")
             if self.settings.write_statistics:
@@ -231,6 +250,7 @@ class BaseTrainer(object):
             self.f1 = 0
             self.last_image = None
             self.last_prob_map = None
+            self.model.eval()
             test_loss, batches_num = self.test_loop()
             self.f1 /= batches_num
 
